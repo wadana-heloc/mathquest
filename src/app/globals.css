@@ -1,4 +1,4 @@
-@tailwind base;
+/* @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -23,5 +23,181 @@ body {
 @layer utilities {
   .text-balance {
     text-wrap: balance;
+  }
+} */
+
+@import url("https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Inter:wght@300;400;500;600&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --color-primary:    #1A1A2E;
+  --color-gold:       #E8B84B;
+  --color-teal:       #2DD4BF;
+  --color-coral:      #F97316;
+  --color-violet:     #7C3AED;
+  --color-green:      #22C55E;
+  --color-border:     #E2E0DC;
+  --color-text-muted: #6B6A66;
+  --font-display:     "Nunito", sans-serif;
+  --font-body:        "Inter", sans-serif;
+}
+
+@layer base {
+  *, *::before, *::after { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    padding: 0;
+    font-family: var(--font-body);
+    background-color: var(--color-primary);
+    color: #ffffff;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Hide Phaser canvas default cursor area */
+  canvas { display: block; }
+}
+
+@layer components {
+  /* ── Auth Input ───────────────────────────────────────────────────────── */
+  .auth-input {
+    @apply w-full bg-white/5 border border-white/10 rounded-md
+           text-white placeholder-white/30
+           px-4 h-14 text-base
+           transition-all duration-200 outline-none;
+    font-family: var(--font-body);
+    font-size: 15px;
+  }
+
+  .auth-input:focus {
+    border-color: var(--color-gold);
+    background-color: rgba(232, 184, 75, 0.05);
+    box-shadow: 0 0 0 3px rgba(232, 184, 75, 0.15);
+  }
+
+  .auth-input.error {
+    border-color: var(--color-coral);
+    box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15);
+  }
+
+  /* ── Auth Label ──────────────────────────────────────────────────────── */
+  .auth-label {
+    @apply block text-white/60 mb-2;
+    font-family: var(--font-body);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  /* ── Primary Gold Button ─────────────────────────────────────────────── */
+  .btn-gold {
+    @apply w-full h-14 rounded-md font-display font-bold text-primary
+           transition-all duration-200 relative overflow-hidden
+           flex items-center justify-center gap-2;
+    background-color: var(--color-gold);
+    font-size: 16px;
+    letter-spacing: 0.02em;
+  }
+
+  .btn-gold:hover:not(:disabled) {
+    background-color: #f0c55c;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 30px rgba(232, 184, 75, 0.4);
+  }
+
+  .btn-gold:active:not(:disabled) {
+    transform: translateY(0);
+  }
+
+  .btn-gold:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* Shimmer effect on button */
+  .btn-gold::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(
+      90deg,
+      transparent 0%,
+      rgba(255,255,255,0.3) 50%,
+      transparent 100%
+    );
+    background-size: 200% 100%;
+    opacity: 0;
+    transition: opacity 0.2s;
+  }
+
+  .btn-gold:hover::after {
+    opacity: 1;
+    animation: shimmer 1.2s linear infinite;
+  }
+
+  /* ── Ghost / Secondary Button ────────────────────────────────────────── */
+  .btn-ghost {
+    @apply w-full h-12 rounded-md font-body font-medium text-white/70
+           border border-white/10 transition-all duration-200
+           flex items-center justify-center gap-2;
+    font-size: 14px;
+  }
+
+  .btn-ghost:hover {
+    @apply border-white/30 text-white;
+    background-color: rgba(255,255,255,0.05);
+  }
+
+  /* ── Error message ───────────────────────────────────────────────────── */
+  .field-error {
+    @apply text-coral text-xs mt-1;
+    font-family: var(--font-body);
+  }
+
+  /* ── Divider ─────────────────────────────────────────────────────────── */
+  .auth-divider {
+    @apply flex items-center gap-3 my-6;
+  }
+
+  .auth-divider::before,
+  .auth-divider::after {
+    content: "";
+    @apply flex-1 h-px;
+    background: rgba(255,255,255,0.1);
+  }
+
+  .auth-divider span {
+    @apply text-white/30 text-xs uppercase tracking-widest;
+    font-family: var(--font-body);
+  }
+}
+
+/* ── Noise texture overlay ────────────────────────────────────────────────── */
+.noise-overlay {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 1;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
+}
+
+/* ── Scrollbar ────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--color-primary); }
+::-webkit-scrollbar-thumb {
+  background: rgba(232,184,75,0.3);
+  border-radius: 999px;
+}
+
+/* ── Reduced motion ───────────────────────────────────────────────────────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
   }
 }

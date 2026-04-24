@@ -26,7 +26,10 @@ yarn-debug.log*
 yarn-error.log*
 
 # local env files
-.env*.local
+.env
+.env.*
+!.env.example
+!.env.local.example
 
 # vercel
 .vercel
@@ -34,3 +37,18 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# python
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+MathQuest_Permissions_Matrix_v2.xlsx
+ERD-MathQuest.drawio
+MathQuest_TDD_v1.1.docx
+AGENTS.md
+docs/

@@ -1,0 +1,309 @@
+# Supabase — MathQuest
+
+This directory is the **source of truth** for the MathQuest database schema.
+The schema is expressed as raw SQL migrations in [`migrations/`](migrations/)
+and applied to the Supabase-hosted Postgres instance.
+
+> ⚠️ Do not edit the schema from the Supabase dashboard. Changes made in the
+> dashboard are not tracked in git. Always add a new migration file.
+
+---
+
+## Contents
+
+- [Layout](#layout)
+- [Environment](#environment)
+- [The `users` table](#the-users-table)
+  - [Why `public.users` references `auth.users`](#why-publicusers-references-authusers)
+  - [Signup flow and the `handle_new_user` trigger](#signup-flow-and-the-handle_new_user-trigger)
+  - [Constraints and invariants](#constraints-and-invariants)
+- [Row-Level Security (RLS)](#row-level-security-rls)
+  - [Threat model](#threat-model)
+  - [Policies on `public.users`](#policies-on-publicusers)
+  - [How to test RLS](#how-to-test-rls)
+- [Applying migrations](#applying-migrations)
+- [Conventions for new migrations](#conventions-for-new-migrations)
+
+---
+
+## Layout
+
+```
+supabase/
+├── .env              # DO NOT COMMIT. DATABASE_URL and DB_PASSWORD live here.
+├── README.md         # You are here.
+└── migrations/
+    ├── 0001_create_users.sql
+    ├── 0002_users_display_name_and_hardened_trigger.sql
+    └── 0003_grant_users_table.sql
+```
+
+---
+
+## Environment
+
+`.env` is git-ignored (see the root [`.gitignore`](../.gitignore)). It holds:
+
+| Variable       | Purpose                                                       |
+| -------------- | ------------------------------------------------------------- |
+| `DATABASE_URL` | Direct Postgres connection string (used by `psql`, Alembic…). |
+| `DB_PASSWORD`  | The DB password component of `DATABASE_URL`.                  |
+
+The Next.js app never uses `DATABASE_URL` directly; it goes through the
+Supabase JS client using the public `SUPABASE_URL` + `SUPABASE_ANON_KEY`.
+
+---
+
+## The `users` table
+
+Source: [`migrations/0001_create_users.sql`](migrations/0001_create_users.sql).
+
+| Column           | Type          | Notes                                                             |
+| ---------------- | ------------- | ----------------------------------------------------------------- |
+| `id`             | `uuid` PK     | Matches `auth.users.id`. Cascaded delete from `auth.users`.       |
+| `email`          | `text` UNIQUE | Synced from `auth.users.email` at signup.                         |
+| `role`           | `text`        | `'parent'` or `'child'` (CHECK constraint).                       |
+| `parent_id`      | `uuid` FK     | Self-reference → `public.users.id`. `NULL` for parents.           |
+| `display_name`   | `text`        | Length 1..80. Parent: from signup form. Child: from admin create. |
+| `created_at`     | `timestamptz` | Default `now()`.                                                  |
+| `last_active_at` | `timestamptz` | Default `now()`. Updated from the app on tracked user actions.    |
+
+Indexes: `role`, `parent_id`, `created_at`, `last_active_at`. `email` is
+already indexed by its UNIQUE constraint.
+
+### Why `public.users` references `auth.users`
+
+Supabase ships a built-in `auth` schema with `auth.users`, which handles
+passwords, sessions, OAuth, magic links, and password resets. We do **not**
+reimplement any of that. Instead, we keep application-facing data
+(`role`, `parent_id`, etc.) in our own `public.users` table, joined 1:1 by a
+shared `id`.
+
+Benefits:
+
+- `auth.users` is managed by Supabase; we never touch it directly.
+- RLS policies on `public.users` can reference `auth.uid()` (the id from the
+  JWT) and compare it to `public.users.id` for free.
+- Deleting an auth account (`auth.users` row) cascades to `public.users`,
+  so there is no orphaned state.
+
+### Signup flow and the `handle_new_user` trigger
+
+```
+    Client                 Supabase Auth                  Postgres
+      │                         │                            │
+      │  signUp(email, pw,      │                            │
+      │    options.data = {     │                            │
+      │      role, parent_id    │                            │
+      │    })                   │                            │
+      ├────────────────────────►│                            │
+      │                         │  INSERT INTO auth.users    │
+      │                         │  (…, raw_user_meta_data)   │
+      │                         ├───────────────────────────►│
+      │                         │                            │
+      │                         │                 TRIGGER    │
+      │                         │                 on_auth_   │
+      │                         │                 user_      │
+      │                         │                 created    │
+      │                         │                    │       │
+      │                         │                    ▼       │
+      │                         │            handle_new_user │
+      │                         │            (SECURITY       │
+      │                         │             DEFINER)       │
+      │                         │                    │       │
+      │                         │            INSERT INTO     │
+      │                         │            public.users    │
+      │                         │            (id, email,     │
+      │                         │             role,          │
+      │                         │             parent_id)     │
+      │                         │                            │
+      │  session / error        │                            │
+      │◄────────────────────────┤                            │
+```
+
+**Two sources of metadata, and only one of them is trusted.**
+
+| Metadata field          | Writable by                | Read by trigger for          |
+| ----------------------- | -------------------------- | ---------------------------- |
+| `raw_user_meta_data`    | Any caller of `auth.signUp()` (including end users) | `display_name`       |
+| `raw_app_meta_data`     | Service role only (admin API) | `role`, `parent_id`       |
+
+This split is how we enforce **SC-06** ("Child self-registration is blocked
+at system level"). A user calling `auth.signUp()` from the browser can
+only influence `raw_user_meta_data`; they cannot set `role='child'` from
+there. Role is always derived from `raw_app_meta_data`, which only the
+FastAPI backend (holding `SUPABASE_SERVICE_ROLE_KEY`) can write.
+
+```python
+# Parent signup — public. display_name from the form.
+#   role defaults to 'parent' because no app_metadata is set.
+supabase.auth.sign_up({
+    "email": email,
+    "password": password,
+    "options": {"data": {"display_name": name}},
+})
+
+# Child creation — admin only. Called by the FastAPI backend once the
+# parent is authenticated.
+admin_supabase.auth.admin.create_user({
+    "email": email,
+    "password": password,
+    "email_confirm": True,
+    "app_metadata": {
+        "role": "child",
+        "parent_id": str(parent_id),
+        "display_name": child_name,   # duplicated here; trigger reads either.
+    },
+})
+```
+
+If metadata is invalid (e.g. a `role='child'` payload somehow reaches the
+trigger without a `parent_id`), the `public.users` insert fails via the
+CHECK constraint and the whole `auth.users` insert rolls back. Intentional —
+we never want an auth account without a profile row.
+
+The trigger runs as `SECURITY DEFINER` so it can write to `public.users`
+even while RLS is enabled; `search_path` is pinned inside the function to
+avoid the well-known search-path hijack on `SECURITY DEFINER` functions.
+
+### Constraints and invariants
+
+Enforced at the database so no application bug can violate them:
+
+- `role IN ('parent', 'child')`.
+- `role='child'` ↔ `parent_id IS NOT NULL`.
+- `role='parent'` ↔ `parent_id IS NULL`.
+- `email` unique across the table.
+- `display_name` between 1 and 80 characters.
+- Deleting the `auth.users` row deletes the `public.users` row
+  (`ON DELETE CASCADE`).
+- Deleting a parent sets `parent_id = NULL` on their children
+  (`ON DELETE SET NULL`) — note this will then violate the
+  parent-consistency CHECK, so parent deletion should cascade through
+  the children in application logic first. We will revisit this when we
+  implement account deletion.
+
+---
+
+## Row-Level Security (RLS)
+
+### Threat model
+
+The Supabase `anon` and `authenticated` API keys are **public** — they ship
+in the browser bundle. Anyone can hit the REST/GraphQL/Realtime endpoints
+with those keys. The only thing standing between an attacker and the data
+is Postgres Row-Level Security.
+
+Assume the anon key is known to the public. RLS must be:
+
+1. **Enabled** on every table in `public`.
+2. **Deny-by-default**: any table without a policy rejects all reads and
+   writes from anon/authenticated roles.
+3. Written as `USING` (which rows are visible/targetable) **plus**
+   `WITH CHECK` on INSERT/UPDATE (what the row may look like after the
+   write), since `USING` alone does not stop a user from mutating a row
+   into a state they shouldn't own.
+
+The `service_role` key bypasses RLS entirely and must **never** ship to the
+browser. It is only used in server-side code (Next.js route handlers /
+server actions / future Python backend).
+
+### Policies on `public.users`
+
+RLS is enabled. Four policies are defined — an end user acting via the
+`authenticated` role sees the following:
+
+| Action   | Policy                          | Effect                                                  |
+| -------- | ------------------------------- | ------------------------------------------------------- |
+| `SELECT` | `users_select_self`             | Read own row (`id = auth.uid()`).                       |
+| `SELECT` | `users_select_own_children`     | A parent reads their children (`parent_id = auth.uid()`). |
+| `UPDATE` | `users_update_self`             | Update own row. `WITH CHECK` pins the id to the caller. |
+| `INSERT` | *(none)*                        | **Denied.** Rows are created only by the auth trigger.  |
+| `DELETE` | *(none)*                        | **Denied.** Rows are removed only via cascade from `auth.users`. |
+
+A child has **no read access to their parent's row**, which matches the
+product intent (children see their own progress; parents see their
+children's). If that changes, add a policy like:
+
+```sql
+create policy "users_select_own_parent"
+  on public.users for select
+  using (id = (select parent_id from public.users where id = auth.uid()));
+```
+
+### How to test RLS
+
+From the Supabase SQL editor, use `set local role` to impersonate an
+end-user session:
+
+```sql
+-- Impersonate an authenticated user. Replace the UUID.
+set local role authenticated;
+set local request.jwt.claim.sub = '00000000-0000-0000-0000-000000000001';
+
+-- Should return exactly one row (the caller's own).
+select * from public.users;
+
+-- Should return 0 rows even though the table has other data.
+select * from public.users where id <> auth.uid() and parent_id is distinct from auth.uid();
+```
+
+Reset afterwards with `reset role;`.
+
+---
+
+## Applying migrations
+
+There are three supported ways to apply a migration, depending on your
+setup. Pick one and be consistent.
+
+### Option A — Supabase SQL Editor (simplest, good for solo work)
+
+1. Open the Supabase dashboard → your project → **SQL Editor**.
+2. Paste the contents of the migration file.
+3. Run.
+4. Track in git which files have been applied; the dashboard keeps no
+   history of this.
+
+### Option B — `psql` against `DATABASE_URL` (good for scripting)
+
+```bash
+# From the project root
+psql "$DATABASE_URL" -f supabase/migrations/0001_create_users.sql
+```
+
+Requires `psql` locally and the real password substituted into
+`DATABASE_URL` (in `supabase/.env`, `[YOUR-PASSWORD]` is a placeholder).
+
+### Option C — Supabase CLI (preferred once the project is shared)
+
+```bash
+supabase link --project-ref tsbmhewqshtcazkavwho
+supabase db push
+```
+
+The CLI understands the `migrations/` folder layout natively and records
+which migrations have been applied in the `supabase_migrations` schema.
+Switch to this before a second contributor joins the project.
+
+---
+
+## Conventions for new migrations
+
+- **Filename**: `NNNN_snake_case_description.sql`, zero-padded to 4 digits
+  (`0002_add_children_table.sql`). Numbers must be monotonic — no gaps,
+  no re-numbering after merge.
+- **One concern per file**: one table, or one related change. Don't
+  bundle unrelated work.
+- **Reversibility**: for now we do not keep down-migrations; the database
+  is young and rolling forward is cheap. Revisit once we have real data.
+- **Always comment the table and columns** (`comment on table…`,
+  `comment on column…`). These show up in the Supabase dashboard and are
+  the cheapest form of documentation.
+- **Always enable RLS** on new `public` tables, and add explicit policies.
+  A table without policies denies everything from anon/authenticated,
+  which is often what you want — but be explicit about it with a comment
+  in the migration so the intent is recorded.
+- **Never reference the service_role key from a migration.** Migrations
+  run with superuser privileges during apply; authorization belongs in
+  policies, not in the migration body.

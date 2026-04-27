@@ -19,6 +19,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import __version__
 from app.errors import APIError, api_error_handler, unhandled_error_handler
 from app.routes import auth as auth_routes
+from app.routes import parent as parent_routes
 from app.settings import get_settings
 
 
@@ -56,6 +57,7 @@ def create_app() -> FastAPI:
     app.add_exception_handler(Exception, unhandled_error_handler)
 
     app.include_router(auth_routes.router)
+    app.include_router(parent_routes.router)
 
     @app.get("/healthz", tags=["meta"])
     async def healthz() -> dict[str, str]:

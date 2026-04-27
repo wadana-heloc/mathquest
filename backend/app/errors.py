@@ -76,6 +76,37 @@ class AuthServiceUnavailable(APIError):
     code = "auth_service_unavailable"
 
 
+# --- Authorization (caller is authenticated but not allowed) -----------------
+
+
+class ForbiddenRole(APIError):
+    """The caller's role does not permit this action.
+
+    Distinct from :class:`NotAuthenticated`: the JWT is valid, but the role
+    on the matching ``public.users`` row is wrong (e.g. a child trying to
+    create another child, which only parents may do).
+    """
+
+    status_code = status.HTTP_403_FORBIDDEN
+    code = "forbidden_role"
+
+
+# --- Parent / child management -----------------------------------------------
+
+
+class ChildCreateFailed(APIError):
+    """Something went wrong creating the child after auth.users was made.
+
+    Used to signal that the auth user was created but a downstream step
+    (e.g. inserting into public.children) failed. The handler that raises
+    this is responsible for rolling back the auth user so we don't leave
+    a half-built account behind.
+    """
+
+    status_code = status.HTTP_500_INTERNAL_SERVER_ERROR
+    code = "child_create_failed"
+
+
 # --- Exception handlers ------------------------------------------------------
 
 

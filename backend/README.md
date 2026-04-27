@@ -35,9 +35,11 @@ backend/
 │   ├── security.py         # JWT verification → get_current_user
 │   ├── supabase_clients.py # admin & anon client factories
 │   ├── routes/
-│   │   └── auth.py         # /auth/signup, /auth/login, /auth/logout, /auth/me
+│   │   ├── auth.py         # /auth/signup, /auth/login, /auth/logout, /auth/me
+│   │   └── parent.py       # /parent/children, /parent/settings
 │   ├── schemas/
-│   │   └── auth.py         # Pydantic request/response models
+│   │   ├── auth.py         # Pydantic request/response models for /auth/*
+│   │   └── parent.py       # Pydantic request/response models for /parent/*
 │   └── models/
 │       └── user.py         # SQLAlchemy User — documentation-only mirror of public.users
 └── tests/
@@ -64,6 +66,11 @@ cp .env.example .env
 # 4. Apply the DB migrations once (from the Supabase SQL editor):
 #    - supabase/migrations/0001_create_users.sql
 #    - supabase/migrations/0002_users_display_name_and_hardened_trigger.sql
+#    - supabase/migrations/0003_grant_users_table.sql
+#    - supabase/migrations/0004_create_parent_settings.sql
+#    - supabase/migrations/0005_create_children.sql
+#    - supabase/migrations/0006_parent_deletion_cascade.sql
+#    - supabase/migrations/0007_backfill_parent_settings.sql
 
 # 5. Run
 uvicorn app.main:app --reload --port 8000
@@ -86,12 +93,25 @@ See `.env.example` for the full list.
 
 ## /auth endpoints
 
-| Method + path     | Auth          | Purpose                                                     |
-| ----------------- | ------------- | ----------------------------------------------------------- |
-| `POST /auth/signup` | none        | Create a parent account (children cannot self-register).    |
-| `POST /auth/login`  | none        | Exchange email + password for an access + refresh token.    |
-| `POST /auth/logout` | bearer      | Revoke the caller's refresh token (kill all their sessions). |
-| `GET  /auth/me`     | bearer      | Return `public.users` row for the caller.                   |
+| Method + path        | Auth     | Purpose                                                     |
+| -------------------- | -------- | ----------------------------------------------------------- |
+| `POST /auth/signup`  | none     | Create a parent account (children cannot self-register).    |
+| `POST /auth/login`   | none     | Exchange email + password for an access + refresh token. Works for both parent and child accounts. |
+| `POST /auth/refresh` | refresh  | Rotate the access/refresh token pair.                       |
+| `POST /auth/logout`  | bearer   | Revoke the caller's refresh token (kill all their sessions). |
+| `GET  /auth/me`      | bearer   | Return `public.users` row for the caller.                   |
+
+## /parent endpoints
+
+All `/parent/*` endpoints require a parent bearer token. Role is read
+from `public.users` on every call (TDD §9.1) — a child's token gets a
+`403 forbidden_role` regardless of what its claims say.
+
+| Method + path             | Auth         | Purpose                                                              |
+| ------------------------- | ------------ | -------------------------------------------------------------------- |
+| `POST  /parent/children`  | parent       | Create a child account. Calls `admin.create_user` with `app_metadata.role='child'` and inserts the matching `public.children` row. Rolls back the auth user on downstream failure. |
+| `GET   /parent/settings`  | parent       | Read the parent's `public.parent_settings` row (auto-created at signup). |
+| `PATCH /parent/settings`  | parent       | Partial-update settings. Server-managed counters (`stars_earned`, `stars_redeemed`, `last_notified_at`) are **not** writable here. |
 
 Error shape follows TDD §10.1 exactly: `{ "error", "code", "status" }`.
 Known codes are in [app/errors.py](app/errors.py).

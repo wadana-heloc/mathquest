@@ -17,9 +17,14 @@ and applied to the Supabase-hosted Postgres instance.
   - [Why `public.users` references `auth.users`](#why-publicusers-references-authusers)
   - [Signup flow and the `handle_new_user` trigger](#signup-flow-and-the-handle_new_user-trigger)
   - [Constraints and invariants](#constraints-and-invariants)
+- [The `parent_settings` table](#the-parent_settings-table)
+- [The `children` table](#the-children-table)
+- [Parent deletion cascade](#parent-deletion-cascade)
 - [Row-Level Security (RLS)](#row-level-security-rls)
   - [Threat model](#threat-model)
   - [Policies on `public.users`](#policies-on-publicusers)
+  - [Policies on `public.parent_settings`](#policies-on-publicparent_settings)
+  - [Policies on `public.children`](#policies-on-publicchildren)
   - [How to test RLS](#how-to-test-rls)
 - [Applying migrations](#applying-migrations)
 - [Conventions for new migrations](#conventions-for-new-migrations)
@@ -35,7 +40,11 @@ supabase/
 └── migrations/
     ├── 0001_create_users.sql
     ├── 0002_users_display_name_and_hardened_trigger.sql
-    └── 0003_grant_users_table.sql
+    ├── 0003_grant_users_table.sql
+    ├── 0004_create_parent_settings.sql
+    ├── 0005_create_children.sql
+    ├── 0006_parent_deletion_cascade.sql
+    └── 0007_backfill_parent_settings.sql
 ```
 
 ---
@@ -177,11 +186,103 @@ Enforced at the database so no application bug can violate them:
 - `display_name` between 1 and 80 characters.
 - Deleting the `auth.users` row deletes the `public.users` row
   (`ON DELETE CASCADE`).
-- Deleting a parent sets `parent_id = NULL` on their children
-  (`ON DELETE SET NULL`) — note this will then violate the
-  parent-consistency CHECK, so parent deletion should cascade through
-  the children in application logic first. We will revisit this when we
-  implement account deletion.
+- Deleting a parent's `public.users` row cascade-deletes their children's
+  `public.users` rows (`ON DELETE CASCADE` on `parent_id`, set in
+  migration 0006). See [Parent deletion cascade](#parent-deletion-cascade)
+  for the residual `auth.users` gap.
+
+---
+
+## The `parent_settings` table
+
+Source: [`migrations/0004_create_parent_settings.sql`](migrations/0004_create_parent_settings.sql).
+
+A 1:1 extension of `public.users` for parents. Holds every parent-
+configurable knob from TDD §7.4 / §10.3 — time limits, difficulty caps,
+the star-economy threshold, audio volume, notification email.
+
+| Column                 | Type          | Default | Notes                                                         |
+| ---------------------- | ------------- | ------- | ------------------------------------------------------------- |
+| `id`                   | `uuid` PK     | `gen_random_uuid()` | —                                                 |
+| `parent_id`            | `uuid` FK UNIQUE | —    | → `public.users.id`. Cascade-deletes with the user.           |
+| `daily_limit_mins`     | `integer`     | 45      | TDD §10.3.1 default. CHECK 0..1440.                           |
+| `session_limit_mins`   | `integer`     | 30      | TDD §10.3.1 default. CHECK 0..1440.                           |
+| `auto_scaling`         | `boolean`     | `true`  | When false, difficulty is fixed at `children.current_difficulty`. |
+| `difficulty_ceiling`   | `integer`     | 10      | CHECK 1..10. 10 = no practical cap.                           |
+| `star_threshold_coins` | `integer`     | 500     | Coins required per star.                                      |
+| `stars_earned`         | `integer`     | 0      | Server-managed; monotonic.                                    |
+| `stars_redeemed`       | `integer`     | 0      | CHECK `stars_redeemed <= stars_earned`.                       |
+| `audio_volume`         | `integer`     | 80     | CHECK 0..100. Children cannot override.                       |
+| `notification_email`   | `text`        | parent's login email | Set by the trigger from `users.email`; parent can change.    |
+| `last_notified_at`     | `timestamptz` | `null`  | Bookkeeping for the notification scheduler.                   |
+| `created_at`           | `timestamptz` | `now()` | —                                                             |
+| `updated_at`           | `timestamptz` | `now()` | Auto-bumped on every UPDATE by `parent_settings_set_updated_at`. |
+
+**Auto-creation at signup.** Migration 0004 extends `handle_new_user()` so
+that every new parent (any signup path — `/auth/signup`, direct
+`anon.auth.sign_up`, etc.) gets a default `parent_settings` row in the
+same transaction as their `public.users` row. The PATCH endpoint
+(`/parent/settings`) therefore never has to handle a missing row.
+
+---
+
+## The `children` table
+
+Source: [`migrations/0005_create_children.sql`](migrations/0005_create_children.sql).
+
+A 1:1 extension of `public.users` for child profiles. Holds gameplay
+state — zone progress, coin/XP balance, streaks, daily caps — distinct
+from the auth identity in `users`.
+
+| Column                | Type          | Default | Notes                                                         |
+| --------------------- | ------------- | ------- | ------------------------------------------------------------- |
+| `id`                  | `uuid` PK     | `gen_random_uuid()` | —                                                 |
+| `user_id`             | `uuid` FK UNIQUE | —    | → `public.users.id`. Cascade-deletes with the user.           |
+| `avatar_id`           | `integer`     | `null`  | Integer key into the client-side avatar registry.             |
+| `current_zone`        | `integer`     | 1       | CHECK 1..5.                                                   |
+| `coins`               | `integer`     | 0       | CHECK ≥ 0. Server-mutated only.                               |
+| `total_xp`            | `integer`     | 0       | CHECK ≥ 0. Monotonic.                                         |
+| `difficulty_ceiling`  | `integer`     | 10      | CHECK 1..10. App enforces ≤ `parent_settings.difficulty_ceiling`. |
+| `date_of_birth`       | `date`        | `null`  | Optional, parent-supplied at creation.                        |
+| `streak_current`      | `integer`     | 0       | CHECK ≥ 0.                                                    |
+| `streak_best`         | `integer`     | 0       | CHECK `streak_best >= streak_current`.                        |
+| `daily_coins_earned`  | `integer`     | 0       | CHECK ≥ 0. **TDD §6.4 daily cap of 300 is enforced in the API**, not the schema (this column resets daily). |
+| `daily_coins_reset_at`| `timestamptz` | `now()` | Reset-clock for the daily cap.                                |
+| `current_difficulty`  | `integer`     | 1       | CHECK 1..10. Adaptive engine writes here.                     |
+| `created_at`          | `timestamptz` | `now()` | —                                                             |
+
+**Lifecycle.** `INSERT` is backend-only, from `POST /parent/children`,
+after the parent's bearer token is verified and `admin.create_user()`
+has produced the matching `auth.users` + `public.users` rows. We do
+**not** auto-insert from the trigger because (a) the children row needs
+business data not in auth metadata (date_of_birth, avatar_id), and
+(b) there is no public-signup path for children (SC-06).
+
+---
+
+## Parent deletion cascade
+
+Source: [`migrations/0006_parent_deletion_cascade.sql`](migrations/0006_parent_deletion_cascade.sql).
+
+Product intent (confirmed 2026-04-27): deleting a parent deletes their
+children. Migration 0006 expresses this by changing the `parent_id` FK
+from `ON DELETE SET NULL` to `ON DELETE CASCADE`. The chain on a parent
+deletion is:
+
+```
+auth.users (parent)
+   └── (CASCADE) public.users (parent)
+                    └── (CASCADE on parent_id) public.users (each child)
+                                                  └── (CASCADE) public.children (each child)
+                    └── (CASCADE on parent_id)  public.parent_settings (parent)
+```
+
+**Known gap.** This chain does **not** climb back to `auth.users` for
+the children — their auth rows survive the cascade. Until the
+account-deletion endpoint exists, there is no public way to delete a
+parent in production, so the gap is latent. When that endpoint is built,
+it must call `admin.delete_user()` for each child first, then the
+parent.
 
 ---
 
@@ -230,6 +331,30 @@ create policy "users_select_own_parent"
   on public.users for select
   using (id = (select parent_id from public.users where id = auth.uid()));
 ```
+
+### Policies on `public.parent_settings`
+
+| Action | Policy                          | Effect                                                  |
+| ------ | ------------------------------- | ------------------------------------------------------- |
+| SELECT | `parent_settings_select_self`   | Parent reads own row (`parent_id = auth.uid()`).        |
+| UPDATE | `parent_settings_update_self`   | Parent updates own row. `WITH CHECK` pins parent_id.    |
+| INSERT | *(none)*                        | **Denied.** Rows created only by `handle_new_user()` trigger. |
+| DELETE | *(none)*                        | **Denied.** Rows removed only via cascade.              |
+
+### Policies on `public.children`
+
+| Action | Policy                                | Effect                                                          |
+| ------ | ------------------------------------- | --------------------------------------------------------------- |
+| SELECT | `children_select_self`                | Child reads own row (`user_id = auth.uid()`).                   |
+| SELECT | `children_select_owned_by_parent`     | Parent reads any of their children (joined via `users.parent_id`). |
+| INSERT | *(none)*                              | **Denied.** Rows created only by `POST /parent/children` (service_role). |
+| UPDATE | *(none)*                              | **Denied for end users.** Gameplay endpoints write via service_role. |
+| DELETE | *(none)*                              | **Denied.** Rows removed only via cascade.                      |
+
+Children have no UPDATE policy because direct writes to `coins`,
+`total_xp`, `streak_*`, etc. would let a player tamper with their own
+balance. Every gameplay mutation goes through the API, which validates
+and writes via `service_role`.
 
 ### How to test RLS
 

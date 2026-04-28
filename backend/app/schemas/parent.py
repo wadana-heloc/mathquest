@@ -32,6 +32,7 @@ class ChildCreateRequest(BaseModel):
     display_name: str = Field(min_length=DISPLAY_NAME_MIN, max_length=DISPLAY_NAME_MAX)
     date_of_birth: date | None = None
     avatar_id: int | None = Field(default=None, ge=0)
+    grade: int = Field(default=2, ge=1, le=12)
 
     @field_validator("display_name")
     @classmethod
@@ -60,6 +61,7 @@ class ChildProfile(BaseModel):
     total_xp: int
     difficulty_ceiling: int
     date_of_birth: date | None = None
+    grade: int
     streak_current: int
     streak_best: int
     daily_coins_earned: int

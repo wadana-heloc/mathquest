@@ -97,6 +97,7 @@ def _child_profile_from_rows(child_row: dict[str, Any], user_row: dict[str, Any]
         total_xp=child_row["total_xp"],
         difficulty_ceiling=child_row["difficulty_ceiling"],
         date_of_birth=child_row["date_of_birth"],
+        grade=child_row["grade"],
         streak_current=child_row["streak_current"],
         streak_best=child_row["streak_best"],
         daily_coins_earned=child_row["daily_coins_earned"],
@@ -210,7 +211,7 @@ async def create_child(
 
     # Step 3: insert public.children. If this fails we roll back the auth
     # user so the next signup attempt with the same email works.
-    insert_payload: dict[str, Any] = {"user_id": str(new_user_id)}
+    insert_payload: dict[str, Any] = {"user_id": str(new_user_id), "grade": payload.grade}
     if payload.avatar_id is not None:
         insert_payload["avatar_id"] = payload.avatar_id
     if payload.date_of_birth is not None:

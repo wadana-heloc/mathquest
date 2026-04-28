@@ -19,7 +19,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from app import __version__
 from app.errors import APIError, api_error_handler, unhandled_error_handler
 from app.routes import auth as auth_routes
+from app.routes import child as child_routes
 from app.routes import parent as parent_routes
+from app.routes import problems as problems_routes
 from app.settings import get_settings
 
 
@@ -32,6 +34,9 @@ def _configure_logging(env: str) -> None:
         format="%(asctime)s %(levelname)-7s %(name)s | %(message)s",
         force=True,
     )
+    # Suppress byte-level noise from HTTP/2 and header-compression libs.
+    for noisy in ("httpx", "httpcore", "hpack"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
 
 
 def create_app() -> FastAPI:
@@ -57,7 +62,9 @@ def create_app() -> FastAPI:
     app.add_exception_handler(Exception, unhandled_error_handler)
 
     app.include_router(auth_routes.router)
+    app.include_router(child_routes.router)
     app.include_router(parent_routes.router)
+    app.include_router(problems_routes.router)
 
     @app.get("/healthz", tags=["meta"])
     async def healthz() -> dict[str, str]:

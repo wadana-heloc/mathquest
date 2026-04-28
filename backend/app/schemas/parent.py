@@ -78,6 +78,10 @@ class ChildCreateResponse(BaseModel):
     child: ChildProfile
 
 
+class ChildrenListResponse(BaseModel):
+    children: list[ChildProfile]
+
+
 # --- GET /parent/settings, PATCH /parent/settings ---------------------------
 
 

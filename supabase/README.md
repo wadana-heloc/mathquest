@@ -19,12 +19,17 @@ and applied to the Supabase-hosted Postgres instance.
   - [Constraints and invariants](#constraints-and-invariants)
 - [The `parent_settings` table](#the-parent_settings-table)
 - [The `children` table](#the-children-table)
+- [The `tricks` table](#the-tricks-table)
+- [The `problems` table](#the-problems-table)
+- [The `sessions` table](#the-sessions-table)
+- [The `trick_discoveries` table](#the-trick_discoveries-table)
 - [Parent deletion cascade](#parent-deletion-cascade)
 - [Row-Level Security (RLS)](#row-level-security-rls)
   - [Threat model](#threat-model)
   - [Policies on `public.users`](#policies-on-publicusers)
   - [Policies on `public.parent_settings`](#policies-on-publicparent_settings)
   - [Policies on `public.children`](#policies-on-publicchildren)
+  - [Policies on gameplay tables](#policies-on-gameplay-tables)
   - [How to test RLS](#how-to-test-rls)
 - [Applying migrations](#applying-migrations)
 - [Conventions for new migrations](#conventions-for-new-migrations)
@@ -44,7 +49,12 @@ supabase/
     ├── 0004_create_parent_settings.sql
     ├── 0005_create_children.sql
     ├── 0006_parent_deletion_cascade.sql
-    └── 0007_backfill_parent_settings.sql
+    ├── 0007_backfill_parent_settings.sql
+    ├── 0008_add_grade_to_children.sql
+    ├── 0009_create_tricks.sql
+    ├── 0010_create_problems.sql
+    ├── 0011_create_sessions.sql
+    └── 0012_create_trick_discoveries.sql
 ```
 
 ---
@@ -248,6 +258,7 @@ from the auth identity in `users`.
 | `streak_best`         | `integer`     | 0       | CHECK `streak_best >= streak_current`.                        |
 | `daily_coins_earned`  | `integer`     | 0       | CHECK ≥ 0. **TDD §6.4 daily cap of 300 is enforced in the API**, not the schema (this column resets daily). |
 | `daily_coins_reset_at`| `timestamptz` | `now()` | Reset-clock for the daily cap.                                |
+| `grade`               | `integer`     | 2       | School grade level CHECK 1..12. Parent-supplied at creation; default 2 (age-7 lower bound). |
 | `current_difficulty`  | `integer`     | 1       | CHECK 1..10. Adaptive engine writes here.                     |
 | `created_at`          | `timestamptz` | `now()` | —                                                             |
 
@@ -257,6 +268,98 @@ has produced the matching `auth.users` + `public.users` rows. We do
 **not** auto-insert from the trigger because (a) the children row needs
 business data not in auth metadata (date_of_birth, avatar_id), and
 (b) there is no public-signup path for children (SC-06).
+
+---
+
+## The `tricks` table
+
+Source: [`migrations/0009_create_tricks.sql`](migrations/0009_create_tricks.sql).
+
+Static catalog of math shortcut tricks. Seeded with 17 codes at migration time; new tricks are added manually. Read-only from the client.
+
+| Column        | Type   | Notes |
+| ------------- | ------ | ----- |
+| `id`          | `text` PK | Short code, e.g. `'A1'`, `'B2'`. Referenced by `problems.trick_ids[]` and `trick_discoveries.trick_id`. |
+| `name`        | `text` | Human-readable name shown in the journal. |
+| `category`    | `text` | `multiplication \| mental_math \| number_theory \| pattern \| algebra \| sequences` |
+| `description` | `text` | One-sentence explanation of the shortcut. |
+
+Seeded codes: A1 (×11), A2 (×9), A3 (perfect squares), A5 (consecutive odds), A6 (diff of squares), A7 (×25), B1 (parity), B4 (modular arithmetic), B5 (div by 9), C1 (chunking), C2 (complement pairs), C3 (near-benchmark), C4 (near-doubles), C5 (×5 halving), C7 (grouping), D4 (geometric series), D5 (triangular numbers).
+
+---
+
+## The `problems` table
+
+Source: [`migrations/0010_create_problems.sql`](migrations/0010_create_problems.sql).
+
+Problem catalog. Seeded with 40 canonical problems from TDD §08 (Zones 1–4, difficulties 1–9). When the AI model is integrated, new rows will be inserted here by the `GET /problems` handler before being returned to the client.
+
+> ⚠️ **Security:** `answer`, `shortcut_path`, and `shortcut_time_threshold_ms` are stored here for server-side verification only. They must **never** be selected in client-facing queries. The API always names columns explicitly — never `SELECT *` on this table from a route handler.
+
+| Column | Type | Notes |
+| ------ | ---- | ----- |
+| `id` | `uuid` PK | `gen_random_uuid()`. Stable after insert; sent to the client for attempt/hint requests. |
+| `zone` | `integer` | CHECK 1..5. |
+| `category` | `text` | `arithmetic \| pattern \| invariant \| mental \| structural \| algebraic` |
+| `difficulty` | `integer` | CHECK 1..10. |
+| `trick_ids` | `text[]` | Trick codes this problem exercises (references `tricks.id` by convention; no FK since array FKs aren't native in Postgres). |
+| `stem` | `text` | Problem statement shown to the child. |
+| `answer` | `text` | **Server-only.** Stored as text; cast per `answer_type` for comparison. |
+| `answer_type` | `text` | `exact \| range \| set`. `exact` = float comparison; `set` = case-insensitive string match. |
+| `shortcut_path` | `text` | **Server-only.** Explanation of the trick route. |
+| `shortcut_time_threshold_ms` | `integer` | **Server-only.** Duration below which a correct, hint-free response triggers `insight_detected`. |
+| `brute_force_path` | `text` | Explanation of the long route (internal). |
+| `hints` | `jsonb` | `[{level, text, cost}]` — three tiers always present. Costs: 0 / 5 / 15 coins. |
+| `aha_moment` | `text` | One-line insight description for the trick-card journal. |
+| `flavor_text` | `text` | Narrative story context. |
+| `tags` | `text[]` | Topic tags (e.g. `['multiplication', 'x9', 'zone-2']`). |
+| `base_coins` | `integer` | Default 10. Multiplied by the attempt-scoring table. |
+| `created_at` | `timestamptz` | `now()`. |
+
+Index: `(zone, difficulty)` for the `GET /problems` filter query.
+
+---
+
+## The `sessions` table
+
+Source: [`migrations/0011_create_sessions.sql`](migrations/0011_create_sessions.sql).
+
+One row per gameplay session. The `id` is a client-generated UUID that the frontend includes with every `POST /problems/attempt` and `POST /problems/hint` request.
+
+> `POST /problems/session` (explicit session creation) is **TODO**. Until it is built, the attempt handler creates the row implicitly on first use.
+
+| Column | Type | Notes |
+| ------ | ---- | ----- |
+| `id` | `uuid` PK | Client-generated; no server default. |
+| `child_id` | `uuid` FK | → `public.children.id` (not `users.id`). Cascade-deletes with the child. |
+| `started_at` | `timestamptz` | `now()`. |
+| `ended_at` | `timestamptz` | Nullable; set when the session ends. |
+| `is_active` | `boolean` | Default `true`. Attempt/hint endpoints reject inactive sessions. |
+
+Index: `child_id`.
+
+---
+
+## The `trick_discoveries` table
+
+Source: [`migrations/0012_create_trick_discoveries.sql`](migrations/0012_create_trick_discoveries.sql).
+
+Per-child insight analytics per trick. Tracks how many times a child has demonstrated fast, correct, hint-free answers (insight detection) for a given trick. When `insight_count` reaches 3, the trick is unlocked and a journal card appears in the UI.
+
+Also serves as the `unlocked_tricks` list sent to the AI model when integrated.
+
+| Column | Type | Notes |
+| ------ | ---- | ----- |
+| `id` | `uuid` PK | `gen_random_uuid()`. |
+| `child_id` | `uuid` FK | → `public.children.id`. Cascade-deletes with the child. |
+| `trick_id` | `text` FK | → `public.tricks.id`. |
+| `insight_count` | `integer` | Default 0. Incremented each time insight is detected for this trick. CHECK ≥ 0. |
+| `unlocked` | `boolean` | Default `false`. Set to `true` when `insight_count` reaches 3. |
+| `unlocked_at` | `timestamptz` | Nullable. Timestamp of the unlock event. |
+| `first_seen_at` | `timestamptz` | `now()` at row creation. |
+| `last_insight_at` | `timestamptz` | Nullable. Timestamp of the most recent insight detection. |
+
+Unique constraint: `(child_id, trick_id)` — one row per child per trick.
 
 ---
 
@@ -355,6 +458,19 @@ Children have no UPDATE policy because direct writes to `coins`,
 `total_xp`, `streak_*`, etc. would let a player tamper with their own
 balance. Every gameplay mutation goes through the API, which validates
 and writes via `service_role`.
+
+### Policies on gameplay tables
+
+`public.tricks` and `public.problems` are read-only for authenticated users; all writes go through `service_role`.
+
+| Table | Action | Policy | Effect |
+| ----- | ------ | ------ | ------ |
+| `tricks` | SELECT | `tricks_select_authenticated` | Any authenticated user can read tricks (needed for the journal UI). |
+| `problems` | SELECT | `problems_select_authenticated` | Any authenticated user can read problems (the API layer enforces column projection — answer never selected). |
+| `sessions` | SELECT | `sessions_select_own` | A child reads sessions where `child_id` matches their own `children.id`. |
+| `trick_discoveries` | SELECT | `trick_discoveries_select_own` | A child reads their own trick rows (same join pattern). |
+
+INSERT / UPDATE / DELETE on all four tables: `service_role` only — no policy for authenticated means deny.
 
 ### How to test RLS
 

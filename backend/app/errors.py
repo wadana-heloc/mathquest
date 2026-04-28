@@ -91,6 +91,24 @@ class ForbiddenRole(APIError):
     code = "forbidden_role"
 
 
+# --- Problems / gameplay -----------------------------------------------------
+
+
+class ProblemNotFound(APIError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "problem_not_found"
+
+
+class SessionInvalid(APIError):
+    status_code = status.HTTP_403_FORBIDDEN
+    code = "session_invalid"
+
+
+class InsufficientCoins(APIError):
+    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+    code = "insufficient_coins"
+
+
 # --- Parent / child management -----------------------------------------------
 
 

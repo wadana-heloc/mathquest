@@ -42,6 +42,7 @@ from app.schemas.parent import (
     ChildCreateRequest,
     ChildCreateResponse,
     ChildProfile,
+    ChildrenListResponse,
     ParentSettings,
     ParentSettingsUpdate,
 )
@@ -270,6 +271,67 @@ async def create_child(
     return ChildCreateResponse(
         child=_child_profile_from_rows(child_row, user_res.data[0])
     )
+
+
+# -----------------------------------------------------------------------------
+# GET /parent/children — list all children of the authenticated parent
+# -----------------------------------------------------------------------------
+
+
+@router.get(
+    "/children",
+    response_model=ChildrenListResponse,
+    summary="List all children belonging to the authenticated parent.",
+)
+async def list_children(
+    current: AuthUser = Depends(get_current_user),
+) -> ChildrenListResponse:
+    """Return every child account owned by the caller.
+
+    Queries ``public.users`` for all rows whose ``parent_id`` matches the
+    caller, then fetches the matching ``public.children`` gameplay rows and
+    merges them into ``ChildProfile`` objects.
+
+    Returns an empty list (not 404) when the parent has no children yet.
+    """
+    _require_parent(current)
+
+    admin = get_admin_supabase()
+
+    # Fetch every child's identity row for this parent.
+    users_res = (
+        admin.table("users")
+        .select("id, email, display_name, parent_id")
+        .eq("parent_id", str(current.id))
+        .eq("role", "child")
+        .execute()
+    )
+    if not users_res.data:
+        return ChildrenListResponse(children=[])
+
+    child_user_ids = [row["id"] for row in users_res.data]
+
+    # Fetch all gameplay rows in one query.
+    children_res = (
+        admin.table("children")
+        .select("*")
+        .in_("user_id", child_user_ids)
+        .execute()
+    )
+    children_map: dict[str, Any] = {row["user_id"]: row for row in children_res.data}
+
+    profiles = []
+    for user_row in users_res.data:
+        child_row = children_map.get(user_row["id"])
+        if child_row is None:
+            logger.warning(
+                "children row missing for user %s — skipping from list",
+                user_row["id"],
+            )
+            continue
+        profiles.append(_child_profile_from_rows(child_row, user_row))
+
+    return ChildrenListResponse(children=profiles)
 
 
 # -----------------------------------------------------------------------------

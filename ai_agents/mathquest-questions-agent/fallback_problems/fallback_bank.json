@@ -1,0 +1,902 @@
+{
+  "A1": {
+    "3": {
+      "id": "fb_A1_d3", "zone": 1, "category": "pattern", "difficulty": 3, "trick_id": "A1",
+      "stem": "The cipher gate reads: 11 × 14 = ?",
+      "answer": 154, "answer_type": "exact",
+      "brute_force_path": "10 × 14 + 1 × 14 = 140 + 14 = 154",
+      "shortcut_path": "Digit-sum: 1 + 4 = 5. Sandwich the sum between the digits: 1(5)4 = 154.",
+      "shortcut_time_threshold_ms": 4000,
+      "hints": [
+        {"level": 1, "text": "Look at the two digits of 14. What happens when you multiply any two-digit number by 11?", "cost": 0},
+        {"level": 2, "text": "Try adding the two digits of 14 together.", "cost": 5},
+        {"level": 3, "text": "Place that sum between the original two digits to form the three-digit answer.", "cost": 15}
+      ],
+      "aha_moment": "When multiplying by 11, the middle digit is the sum of the two digits of the other number (when that sum is less than 10).",
+      "flavor_text": "The ancient cipher gate displays 11 × 14. Solve it to pass through.",
+      "tags": ["multiplication", "×11", "two-digit", "zone-1"],
+      "estimated_brute_force_seconds": 10, "estimated_trick_seconds": 2
+    },
+    "6": {
+      "id": "fb_A1_d6", "zone": 3, "category": "pattern", "difficulty": 6, "trick_id": "A1",
+      "stem": "The stone tablet reads: 11 × 39 = ?",
+      "answer": 429, "answer_type": "exact",
+      "brute_force_path": "11 × 39 = 11 × 40 − 11 = 440 − 11 = 429",
+      "shortcut_path": "Digit-sum: 3 + 9 = 12 (≥10, so carry). Units digit is 2, carry 1 into the first digit: (3+1)(2)(9) = 429.",
+      "shortcut_time_threshold_ms": 5000,
+      "hints": [
+        {"level": 1, "text": "Add the two digits of 39 and check: is the sum less than 10?", "cost": 0},
+        {"level": 2, "text": "The digit sum is ≥ 10. Write only the units digit in the middle position, and carry 1 into the leading digit.", "cost": 5},
+        {"level": 3, "text": "Add the carry to the leading digit of 39, keep the units digit of the sum in the middle, and the trailing digit stays the same.", "cost": 15}
+      ],
+      "aha_moment": "When the digit sum is 10 or more, carry the tens digit into the hundreds place: the first digit grows by 1.",
+      "flavor_text": "A stone tablet at the dungeon entrance shows 11 × 39. Only those who solve it may enter.",
+      "tags": ["multiplication", "×11", "carry", "zone-3"],
+      "estimated_brute_force_seconds": 14, "estimated_trick_seconds": 3
+    }
+  },
+  "A2": {
+    "3": {
+      "id": "fb_A2_d3", "zone": 1, "category": "pattern", "difficulty": 3, "trick_id": "A2",
+      "stem": "Nine gear-locks each need 8 keys. How many keys in total?",
+      "answer": 72, "answer_type": "exact",
+      "brute_force_path": "8 + 8 + 8 + 8 + 8 + 8 + 8 + 8 + 8 = 72",
+      "shortcut_path": "9 × 8 = 10 × 8 − 8 = 80 − 8 = 72",
+      "shortcut_time_threshold_ms": 3500,
+      "hints": [
+        {"level": 1, "text": "9 is very close to 10. Can you use 10 × 8 to help?", "cost": 0},
+        {"level": 2, "text": "What is 10 × 8? From that result, subtract one group of 8 — because 9 groups is one fewer than 10.", "cost": 5},
+        {"level": 3, "text": "Subtract 8 from the result of 10 × 8.", "cost": 15}
+      ],
+      "aha_moment": "9 × n = 10n − n: multiply by 10 (easy), then subtract the original number once.",
+      "flavor_text": "Nine gear-locks guard the treasure vault. Each needs exactly 8 keys. How many keys must the adventurer carry?",
+      "tags": ["multiplication", "×9", "complement", "zone-1"],
+      "estimated_brute_force_seconds": 12, "estimated_trick_seconds": 2
+    },
+    "6": {
+      "id": "fb_A2_d6", "zone": 3, "category": "pattern", "difficulty": 6, "trick_id": "A2",
+      "stem": "The ancient cipher wheel shows: 9 × 47 = ?",
+      "answer": 423, "answer_type": "exact",
+      "brute_force_path": "9 × 47 = 9 × 40 + 9 × 7 = 360 + 63 = 423",
+      "shortcut_path": "9 × 47 = 10 × 47 − 47 = 470 − 47 = 423",
+      "shortcut_time_threshold_ms": 5000,
+      "hints": [
+        {"level": 1, "text": "9 is one less than 10. What is 10 × 47?", "cost": 0},
+        {"level": 2, "text": "Once you have 10 × 47, subtract one group of 47 — because 9 × 47 has one fewer group.", "cost": 5},
+        {"level": 3, "text": "Subtract 47 from the result of 10 × 47.", "cost": 15}
+      ],
+      "aha_moment": "9 × n = 10n − n. For larger numbers this avoids messy column multiplication.",
+      "flavor_text": "The cipher wheel at the temple entrance spins to reveal 9 × 47. Decode it before time runs out.",
+      "tags": ["multiplication", "×9", "two-digit", "zone-3"],
+      "estimated_brute_force_seconds": 14, "estimated_trick_seconds": 3
+    }
+  },
+  "A3": {
+    "3": {
+      "id": "fb_A3_d3", "zone": 1, "category": "pattern", "difficulty": 3, "trick_id": "A3",
+      "stem": "A crystal doubles in power twice. It starts at 15. What is 4 × 15?",
+      "answer": 60, "answer_type": "exact",
+      "brute_force_path": "15 + 15 + 15 + 15 = 60",
+      "shortcut_path": "Double 15 → 30. Double again → 60.",
+      "shortcut_time_threshold_ms": 3500,
+      "hints": [
+        {"level": 1, "text": "4 = 2 × 2. Can you get to 4 × 15 by doubling twice?", "cost": 0},
+        {"level": 2, "text": "Start by doubling 15 once.", "cost": 5},
+        {"level": 3, "text": "Double your result one more time to reach 4 × 15.", "cost": 15}
+      ],
+      "aha_moment": "4 × n = double then double again. You never have to multiply by 4 directly.",
+      "flavor_text": "A crystal absorbs energy and doubles in power twice. Starting at 15, what is its final power?",
+      "tags": ["multiplication", "×4", "doubling", "zone-1"],
+      "estimated_brute_force_seconds": 10, "estimated_trick_seconds": 2
+    },
+    "6": {
+      "id": "fb_A3_d6", "zone": 3, "category": "pattern", "difficulty": 6, "trick_id": "A3",
+      "stem": "Eight dungeon rooms each hold 23 gems. How many gems total?",
+      "answer": 184, "answer_type": "exact",
+      "brute_force_path": "8 × 23 = 8 × 20 + 8 × 3 = 160 + 24 = 184",
+      "shortcut_path": "Doubling chain: 23 → 46 → 92 → 184",
+      "shortcut_time_threshold_ms": 5000,
+      "hints": [
+        {"level": 1, "text": "8 = 2 × 2 × 2. Can you reach 8 × 23 by doubling three times?", "cost": 0},
+        {"level": 2, "text": "Double 23 once, then double that result.", "cost": 5},
+        {"level": 3, "text": "Double your current result one final time.", "cost": 15}
+      ],
+      "aha_moment": "8 × n = double, double, double. Three doublings instead of one hard multiplication.",
+      "flavor_text": "Eight dungeon rooms line the corridor, each holding exactly 23 gems. The gatekeeper demands the total.",
+      "tags": ["multiplication", "×8", "doubling-chain", "zone-3"],
+      "estimated_brute_force_seconds": 14, "estimated_trick_seconds": 3
+    }
+  },
+  "A4": {
+    "3": {
+      "id": "fb_A4_d3", "zone": 1, "category": "pattern", "difficulty": 3, "trick_id": "A4",
+      "stem": "You know that 6² = 36. Use the near-square pattern to find 7².",
+      "answer": 49, "answer_type": "exact",
+      "brute_force_path": "7 × 7 = 49 (direct multiplication)",
+      "shortcut_path": "7² = 6² + 2×6 + 1 = 36 + 12 + 1 = 49",
+      "shortcut_time_threshold_ms": 4000,
+      "hints": [
+        {"level": 1, "text": "7 = 6 + 1. There is a pattern connecting consecutive perfect squares.", "cost": 0},
+        {"level": 2, "text": "7² = 6² + something. That something involves 6.", "cost": 5},
+        {"level": 3, "text": "Apply the formula (n+1)² = n² + 2n + 1 using n = 6.", "cost": 15}
+      ],
+      "aha_moment": "Each perfect square is the previous one plus twice the previous root plus 1: (n+1)² = n² + 2n + 1.",
+      "flavor_text": "The wizard's tome shows 6² = 36 and asks: what is 7²? You already know the secret pattern.",
+      "tags": ["squares", "near-square", "pattern", "zone-1"],
+      "estimated_brute_force_seconds": 8, "estimated_trick_seconds": 2
+    },
+    "6": {
+      "id": "fb_A4_d6", "zone": 3, "category": "pattern", "difficulty": 6, "trick_id": "A4",
+      "stem": "If 11² = 121, what is 12²?",
+      "answer": 144, "answer_type": "exact",
+      "brute_force_path": "12 × 12 = 12 × 10 + 12 × 2 = 120 + 24 = 144",
+      "shortcut_path": "12² = 11² + 2×11 + 1 = 121 + 22 + 1 = 144",
+      "shortcut_time_threshold_ms": 5000,
+      "hints": [
+        {"level": 1, "text": "12 = 11 + 1. How does 12² relate to 11²?", "cost": 0},
+        {"level": 2, "text": "12² = 11² + 2 × 11 + 1.", "cost": 5},
+        {"level": 3, "text": "Substitute 11² = 121 into the formula and compute the sum.", "cost": 15}
+      ],
+      "aha_moment": "Once you know one perfect square you can chain forward: each square equals the previous plus 2n plus 1.",
+      "flavor_text": "The oracle states: 11² = 121. Now find 12² to unlock the next chamber.",
+      "tags": ["squares", "near-square", "two-digit", "zone-3"],
+      "estimated_brute_force_seconds": 12, "estimated_trick_seconds": 2
+    }
+  },
+  "A5": {
+    "3": {
+      "id": "fb_A5_d3", "zone": 1, "category": "pattern", "difficulty": 3, "trick_id": "A5",
+      "stem": "What is 1 + 3 + 5 + 7?",
+      "answer": 16, "answer_type": "exact",
+      "brute_force_path": "1 + 3 = 4, then 4 + 5 = 9, then 9 + 7 = 16",
+      "shortcut_path": "Count the odd numbers: there are 4. Sum = 4² = 16.",
+      "shortcut_time_threshold_ms": 3500,
+      "hints": [
+        {"level": 1, "text": "How many odd numbers are in the list?", "cost": 0},
+        {"level": 2, "text": "Count the terms. The sum of the first n odd numbers always equals n².", "cost": 5},
+        {"level": 3, "text": "Square the count of odd numbers in the list.", "cost": 15}
+      ],
+      "aha_moment": "The sum of the first n odd numbers always equals n². Count the terms, then square that count.",
+      "flavor_text": "Four glowing stones line the path: 1, 3, 5, 7. Their combined power unlocks the gate.",
+      "tags": ["addition", "odd-numbers", "perfect-square", "zone-1"],
+      "estimated_brute_force_seconds": 8, "estimated_trick_seconds": 2
+    },
+    "6": {
+      "id": "fb_A5_d6", "zone": 3, "category": "pattern", "difficulty": 6, "trick_id": "A5",
+      "stem": "What is 1 + 3 + 5 + 7 + 9 + 11 + 13?",
+      "answer": 49, "answer_type": "exact",
+      "brute_force_path": "1+3=4, 4+5=9, 9+7=16, 16+9=25, 25+11=36, 36+13=49",
+      "shortcut_path": "Seven odd numbers → 7² = 49.",
+      "shortcut_time_threshold_ms": 4000,
+      "hints": [
+        {"level": 1, "text": "Count how many odd numbers appear in the sum.", "cost": 0},
+        {"level": 2, "text": "There are 7 terms. The sum of the first n odd numbers equals n².", "cost": 5},
+        {"level": 3, "text": "Square the number of terms to get the sum.", "cost": 15}
+      ],
+      "aha_moment": "No matter how many consecutive odd numbers you add starting from 1, the answer is always a perfect square.",
+      "flavor_text": "Seven runes carved in stone read 1, 3, 5, 7, 9, 11, 13. Their combined energy is the key.",
+      "tags": ["addition", "odd-numbers", "perfect-square", "zone-3"],
+      "estimated_brute_force_seconds": 16, "estimated_trick_seconds": 2
+    }
+  },
+  "A6": {
+    "4": {
+      "id": "fb_A6_d4", "zone": 2, "category": "pattern", "difficulty": 4, "trick_id": "A6",
+      "stem": "The vault code is 8² − 5². What is it?",
+      "answer": 39, "answer_type": "exact",
+      "brute_force_path": "8² = 64, 5² = 25. 64 − 25 = 39.",
+      "shortcut_path": "a² − b² = (a+b)(a−b). So (8+5)(8−5) = 13 × 3 = 39.",
+      "shortcut_time_threshold_ms": 4000,
+      "hints": [
+        {"level": 1, "text": "a² − b² has a special factoring rule. Can you factor it?", "cost": 0},
+        {"level": 2, "text": "a² − b² = (a+b)(a−b). Apply this with a=8 and b=5.", "cost": 5},
+        {"level": 3, "text": "Multiply (a+b) by (a−b) to find the answer.", "cost": 15}
+      ],
+      "aha_moment": "a² − b² = (a+b)(a−b). A difference of squares becomes two small multiplications.",
+      "flavor_text": "The vault door requires the answer to 8² − 5². Type the code before the timer expires.",
+      "tags": ["subtraction", "squares", "difference-of-squares", "zone-2"],
+      "estimated_brute_force_seconds": 10, "estimated_trick_seconds": 3
+    },
+    "7": {
+      "id": "fb_A6_d7", "zone": 3, "category": "pattern", "difficulty": 7, "trick_id": "A6",
+      "stem": "The bridge cipher reads: 13² − 10² = ?",
+      "answer": 69, "answer_type": "exact",
+      "brute_force_path": "13² = 169, 10² = 100. 169 − 100 = 69.",
+      "shortcut_path": "(13+10)(13−10) = 23 × 3 = 69.",
+      "shortcut_time_threshold_ms": 5000,
+      "hints": [
+        {"level": 1, "text": "a² − b² factors into two expressions involving a and b.", "cost": 0},
+        {"level": 2, "text": "a² − b² = (a+b)(a−b). Calculate (a+b) and (a−b) for a=13, b=10.", "cost": 5},
+        {"level": 3, "text": "Multiply the two factors you found.", "cost": 15}
+      ],
+      "aha_moment": "The difference-of-squares identity turns a hard subtraction of large squares into two tiny multiplications.",
+      "flavor_text": "The ancient bridge cipher shows 13² − 10². Solve it or the drawbridge stays raised.",
+      "tags": ["subtraction", "squares", "difference-of-squares", "zone-3"],
+      "estimated_brute_force_seconds": 14, "estimated_trick_seconds": 3
+    }
+  },
+  "A7": {
+    "4": {
+      "id": "fb_A7_d4", "zone": 2, "category": "pattern", "difficulty": 4, "trick_id": "A7",
+      "stem": "The merchant sells 25 × 16 gold coins. How many?",
+      "answer": 400, "answer_type": "exact",
+      "brute_force_path": "25 × 16 = 25 × 10 + 25 × 6 = 250 + 150 = 400",
+      "shortcut_path": "25 = 100 ÷ 4. So 25 × 16 = (100 × 16) ÷ 4 = 1600 ÷ 4 = 400.",
+      "shortcut_time_threshold_ms": 4000,
+      "hints": [
+        {"level": 1, "text": "25 is one quarter of 100. Can you multiply by 100 first?", "cost": 0},
+        {"level": 2, "text": "Multiply 16 by 100, then divide by 4 because 25 = 100 ÷ 4.", "cost": 5},
+        {"level": 3, "text": "Divide the result of 100 × 16 by 4.", "cost": 15}
+      ],
+      "aha_moment": "25 × n = (100 × n) ÷ 4. Multiply by 100 (easy), then halve twice.",
+      "flavor_text": "A merchant stacks 25 bags of 16 gold coins each. The vault keeper needs the total before sealing the vault.",
+      "tags": ["multiplication", "×25", "divide-by-4", "zone-2"],
+      "estimated_brute_force_seconds": 12, "estimated_trick_seconds": 3
+    },
+    "7": {
+      "id": "fb_A7_d7", "zone": 3, "category": "pattern", "difficulty": 7, "trick_id": "A7",
+      "stem": "The treasure map reads: 25 × 44 = ?",
+      "answer": 1100, "answer_type": "exact",
+      "brute_force_path": "25 × 44 = 25 × 40 + 25 × 4 = 1000 + 100 = 1100",
+      "shortcut_path": "25 × 44 = (100 × 44) ÷ 4 = 4400 ÷ 4 = 1100.",
+      "shortcut_time_threshold_ms": 5000,
+      "hints": [
+        {"level": 1, "text": "25 = 100 ÷ 4. Start by multiplying 44 by 100.", "cost": 0},
+        {"level": 2, "text": "Multiply 44 by 100 to get the scaled product.", "cost": 5},
+        {"level": 3, "text": "Divide the result of 100 × 44 by 4.", "cost": 15}
+      ],
+      "aha_moment": "Multiplying by 25 is the same as multiplying by 100 and dividing by 4 — two easy steps.",
+      "flavor_text": "The treasure map encodes 25 × 44. Decode it to find the number of paces to the chest.",
+      "tags": ["multiplication", "×25", "divide-by-4", "zone-3"],
+      "estimated_brute_force_seconds": 14, "estimated_trick_seconds": 3
+    }
+  },
+  "B1": {
+    "3": {
+      "id": "fb_B1_d3", "zone": 1, "category": "invariant", "difficulty": 3, "trick_id": "B1",
+      "stem": "15 × 9 = ?",
+      "answer": 135, "answer_type": "exact",
+      "brute_force_path": "15 × 9 = 15 × 10 − 15 = 150 − 15 = 135",
+      "shortcut_path": "Both 15 and 9 are odd → product must be odd. Any even answer is instantly wrong. Then 15 × 9 = 150 − 15 = 135.",
+      "shortcut_time_threshold_ms": 4000,
+      "hints": [
+        {"level": 1, "text": "Are both 15 and 9 odd or even?", "cost": 0},
+        {"level": 2, "text": "Odd × Odd = Odd. Eliminate any even answer immediately.", "cost": 5},
+        {"level": 3, "text": "Use 15 × 10 as a starting point, then subtract one group of 15.", "cost": 15}
+      ],
+      "aha_moment": "Checking parity before multiplying eliminates wrong answers instantly and narrows the search space.",
+      "flavor_text": "The dungeon counter tracks 15 × 9 traps. Knowing parity lets you verify the answer fast.",
+      "tags": ["multiplication", "parity", "odd-even", "zone-1"],
+      "estimated_brute_force_seconds": 10, "estimated_trick_seconds": 3
+    },
+    "6": {
+      "id": "fb_B1_d6", "zone": 3, "category": "invariant", "difficulty": 6, "trick_id": "B1",
+      "stem": "47 × 51 = ?",
+      "answer": 2397, "answer_type": "exact",
+      "brute_force_path": "47 × 51 = 47 × 50 + 47 × 1 = 2350 + 47 = 2397",
+      "shortcut_path": "Both 47 and 51 are odd → product is odd. Then 47 × 51 = 47 × 50 + 47 = 2350 + 47 = 2397.",
+      "shortcut_time_threshold_ms": 6000,
+      "hints": [
+        {"level": 1, "text": "Are 47 and 51 odd or even? What does that tell you about their product?", "cost": 0},
+        {"level": 2, "text": "Both are odd, so the product is odd — eliminate all even guesses. Now use 47 × 50 as a starting point.", "cost": 5},
+        {"level": 3, "text": "Add one more group of 47 to the result of 47 × 50.", "cost": 15}
+      ],
+      "aha_moment": "Parity is the fastest check: before computing, know whether the answer is odd or even to eliminate wrong answers.",
+      "flavor_text": "The cipher lock shows 47 × 51. A wrong guess resets the dungeon. Check parity first.",
+      "tags": ["multiplication", "parity", "two-digit", "zone-3"],
+      "estimated_brute_force_seconds": 16, "estimated_trick_seconds": 4
+    }
+  },
+  "B2": {
+    "4": {
+      "id": "fb_B2_d4", "zone": 2, "category": "invariant", "difficulty": 4, "trick_id": "B2",
+      "stem": "12 unit tiles are rearranged from a 3×4 rectangle into a 2×6 rectangle. What is the area of the new shape?",
+      "answer": 12, "answer_type": "exact",
+      "brute_force_path": "2 × 6 = 12",
+      "shortcut_path": "Area is invariant under rearrangement of tiles. Total tiles = 12, so area = 12 regardless of shape.",
+      "shortcut_time_threshold_ms": 4000,
+      "hints": [
+        {"level": 1, "text": "When you rearrange tiles, does the total number of tiles change?", "cost": 0},
+        {"level": 2, "text": "The total number of tiles is the area, and that count is unchanged by rearrangement.", "cost": 5},
+        {"level": 3, "text": "The area equals the number of tiles — count them in the original rectangle.", "cost": 15}
+      ],
+      "aha_moment": "Area is invariant under rearrangement: shuffling tiles changes shape and perimeter, but area is always the tile count.",
+      "flavor_text": "The floor tiles in the crystal chamber can shift into different rectangles. The area does not change — can you see why?",
+      "tags": ["area", "invariant", "perimeter", "zone-2"],
+      "estimated_brute_force_seconds": 8, "estimated_trick_seconds": 2
+    },
+    "7": {
+      "id": "fb_B2_d7", "zone": 3, "category": "invariant", "difficulty": 7, "trick_id": "B2",
+      "stem": "12 unit tiles form a 1×12 line. What is the perimeter?",
+      "answer": 26, "answer_type": "exact",
+      "brute_force_path": "Perimeter of a 1×12 rectangle = 2 × (1 + 12) = 2 × 13 = 26",
+      "shortcut_path": "Area is invariant (= 12 tiles always), but perimeter changes with shape. A 1×12 line: perimeter = 2(1+12) = 26.",
+      "shortcut_time_threshold_ms": 5000,
+      "hints": [
+        {"level": 1, "text": "Does rearranging tiles change the perimeter, or only the area?", "cost": 0},
+        {"level": 2, "text": "Perimeter changes with shape (unlike area). For a 1×12 rectangle, use perimeter = 2(length + width).", "cost": 5},
+        {"level": 3, "text": "Apply the perimeter formula to the dimensions 1 and 12.", "cost": 15}
+      ],
+      "aha_moment": "Area is the invariant (fixed by tile count); perimeter is not invariant and must be calculated for each specific shape.",
+      "flavor_text": "The tiles rearrange into a long corridor 1 tile wide and 12 tiles long. How long is the boundary?",
+      "tags": ["perimeter", "invariant", "rectangle", "zone-3"],
+      "estimated_brute_force_seconds": 10, "estimated_trick_seconds": 3
+    }
+  },
+  "B3": {
+    "3": {
+      "id": "fb_B3_d3", "zone": 1, "category": "invariant", "difficulty": 3, "trick_id": "B3",
+      "stem": "x + 7 = 15. What is x?",
+      "answer": 8, "answer_type": "exact",
+      "brute_force_path": "Try x = 8: 8 + 7 = 15. Correct.",
+      "shortcut_path": "Subtract 7 from both sides: x = 15 − 7 = 8.",
+      "shortcut_time_threshold_ms": 3500,
+      "hints": [
+        {"level": 1, "text": "The equation is balanced. What operation can you apply to both sides to isolate x?", "cost": 0},
+        {"level": 2, "text": "Subtract 7 from both sides to keep the balance.", "cost": 5},
+        {"level": 3, "text": "After subtracting 7 from both sides, read off x from the simplified right-hand side.", "cost": 15}
+      ],
+      "aha_moment": "An equation is a balance: any operation applied equally to both sides preserves it.",
+      "flavor_text": "The enchanted scale shows x + 7 = 15. What weight is x?",
+      "tags": ["algebra", "balance", "addition", "zone-1"],
+      "estimated_brute_force_seconds": 8, "estimated_trick_seconds": 2
+    },
+    "6": {
+      "id": "fb_B3_d6", "zone": 3, "category": "invariant", "difficulty": 6, "trick_id": "B3",
+      "stem": "2x + 5 = 17. What is x?",
+      "answer": 6, "answer_type": "exact",
+      "brute_force_path": "Try x = 6: 2×6 + 5 = 12 + 5 = 17. Correct.",
+      "shortcut_path": "Subtract 5 from both sides: 2x = 12. Divide both sides by 2: x = 6.",
+      "shortcut_time_threshold_ms": 4000,
+      "hints": [
+        {"level": 1, "text": "What operation removes the + 5 from the left side while keeping the equation balanced?", "cost": 0},
+        {"level": 2, "text": "Subtract 5 from both sides to simplify.", "cost": 5},
+        {"level": 3, "text": "After isolating 2x, divide both sides by 2.", "cost": 15}
+      ],
+      "aha_moment": "Solve equations step by step: undo addition first, then undo multiplication, applying each operation to both sides.",
+      "flavor_text": "The magic mirror shows 2x + 5 = 17. Solve for x to reveal the portal code.",
+      "tags": ["algebra", "balance", "two-step", "zone-3"],
+      "estimated_brute_force_seconds": 12, "estimated_trick_seconds": 3
+    }
+  },
+  "B4": {
+    "5": {
+      "id": "fb_B4_d5", "zone": 2, "category": "invariant", "difficulty": 5, "trick_id": "B4",
+      "stem": "What is the remainder when 100 is divided by 7?",
+      "answer": 2, "answer_type": "exact",
+      "brute_force_path": "7 × 14 = 98. 100 − 98 = 2.",
+      "shortcut_path": "Find the largest multiple of 7 that fits in 100: 7 × 14 = 98. Remainder = 100 − 98 = 2.",
+      "shortcut_time_threshold_ms": 5000,
+      "hints": [
+        {"level": 1, "text": "What is the largest multiple of 7 that is less than or equal to 100?", "cost": 0},
+        {"level": 2, "text": "Find the largest multiple of 7 that fits in 100, then see how far 100 is above it.", "cost": 5},
+        {"level": 3, "text": "Subtract that largest multiple from 100 to find the remainder.", "cost": 15}
+      ],
+      "aha_moment": "Modular arithmetic finds remainders by locating the nearest multiple below the target.",
+      "flavor_text": "The clock tower runs on a 7-hour cycle. After 100 hours, where in the cycle is it?",
+      "tags": ["modular", "remainder", "division", "zone-2"],
+      "estimated_brute_force_seconds": 14, "estimated_trick_seconds": 4
+    },
+    "8": {
+      "id": "fb_B4_d8", "zone": 4, "category": "invariant", "difficulty": 8, "trick_id": "B4",
+      "stem": "What is the remainder when 365 is divided by 7?",
+      "answer": 1, "answer_type": "exact",
+      "brute_force_path": "7 × 52 = 364. 365 − 364 = 1.",
+      "shortcut_path": "7 × 52 = 364. 365 − 364 = 1. Remainder = 1.",
+      "shortcut_time_threshold_ms": 6000,
+      "hints": [
+        {"level": 1, "text": "How many complete weeks fit in 365 days?", "cost": 0},
+        {"level": 2, "text": "Calculate how many complete multiples of 7 fit in 365.", "cost": 5},
+        {"level": 3, "text": "Subtract the total days in complete weeks from 365.", "cost": 15}
+      ],
+      "aha_moment": "365 days = 52 weeks + 1 day. This is why consecutive years start one weekday later.",
+      "flavor_text": "The dungeon calendar runs in 7-day cycles. After 365 days, which position in the cycle holds the chest?",
+      "tags": ["modular", "remainder", "days", "zone-4"],
+      "estimated_brute_force_seconds": 18, "estimated_trick_seconds": 4
+    }
+  },
+  "B5": {
+    "3": {
+      "id": "fb_B5_d3", "zone": 1, "category": "invariant", "difficulty": 3, "trick_id": "B5",
+      "stem": "The digit sum of 4518 is 4+5+1+8 = 18. What is 4518 ÷ 9?",
+      "answer": 502, "answer_type": "exact",
+      "brute_force_path": "4500 ÷ 9 = 500. 18 ÷ 9 = 2. Total = 502.",
+      "shortcut_path": "Digit sum = 18, which is divisible by 9, so 4518 is divisible by 9. Then 4518 ÷ 9 = 502.",
+      "shortcut_time_threshold_ms": 5000,
+      "hints": [
+        {"level": 1, "text": "The digit sum is 18. Is 18 divisible by 9?", "cost": 0},
+        {"level": 2, "text": "Yes, so 4518 is divisible by 9 with no remainder. Split 4518 into two simpler parts for division.", "cost": 5},
+        {"level": 3, "text": "Divide 4500 by 9, then divide 18 by 9, and add the two partial quotients.", "cost": 15}
+      ],
+      "aha_moment": "If the digit sum is divisible by 9, the whole number is too — confirm this before dividing.",
+      "flavor_text": "The potion recipe calls for 4518 drops split equally into 9 vials. The digit sum tells you if it divides evenly.",
+      "tags": ["divisibility", "digit-sum", "division-by-9", "zone-1"],
+      "estimated_brute_force_seconds": 14, "estimated_trick_seconds": 4
+    },
+    "6": {
+      "id": "fb_B5_d6", "zone": 3, "category": "invariant", "difficulty": 6, "trick_id": "B5",
+      "stem": "The digit sum of 3726 is 3+7+2+6 = 18. What is 3726 ÷ 9?",
+      "answer": 414, "answer_type": "exact",
+      "brute_force_path": "3600 ÷ 9 = 400. 126 ÷ 9 = 14. Total = 414.",
+      "shortcut_path": "Digit sum = 18, divisible by 9. 3726 ÷ 9: 3600÷9=400, 126÷9=14, total=414.",
+      "shortcut_time_threshold_ms": 5000,
+      "hints": [
+        {"level": 1, "text": "The digit sum is 18. What does that tell you about divisibility by 9?", "cost": 0},
+        {"level": 2, "text": "18 is divisible by 9, so 3726 divides evenly. Split 3726 into manageable chunks for division.", "cost": 5},
+        {"level": 3, "text": "Divide 3600 by 9, then divide 126 by 9, and add the two partial quotients.", "cost": 15}
+      ],
+      "aha_moment": "Digit sum divisibility is a free pre-check: know the answer divides evenly before you start the division.",
+      "flavor_text": "Three floors of the crystal tower each hold parts of 3726 mana crystals split among 9 guardians.",
+      "tags": ["divisibility", "digit-sum", "division-by-9", "zone-3"],
+      "estimated_brute_force_seconds": 16, "estimated_trick_seconds": 4
+    }
+  },
+  "B6": {
+    "4": {
+      "id": "fb_B6_d4", "zone": 2, "category": "invariant", "difficulty": 4, "trick_id": "B6",
+      "stem": "Socks come in 7 colours. You cannot see in the dark. How many socks must you grab to guarantee a matching pair?",
+      "answer": 8, "answer_type": "exact",
+      "brute_force_path": "Worst case: you pick one of each colour (7 socks). The 8th must match one already held.",
+      "shortcut_path": "7 colours = 7 containers. After 7 picks you might have one of each colour. Pick 8 → guaranteed match.",
+      "shortcut_time_threshold_ms": 5000,
+      "hints": [
+        {"level": 1, "text": "In the worst case, how many socks can you pick before being forced to repeat a colour?", "cost": 0},
+        {"level": 2, "text": "In the worst case you can pick one of each colour without a match. How many picks does the guarantee require after that?", "cost": 5},
+        {"level": 3, "text": "One more pick beyond the maximum no-match scenario guarantees a repeated colour.", "cost": 15}
+      ],
+      "aha_moment": "Pigeonhole principle: if you have more items (picks) than containers (colours), at least one container must hold more than one item.",
+      "flavor_text": "The sock drawer in the dark dungeon holds socks of 7 colours. Grab enough to guarantee a matching pair.",
+      "tags": ["pigeonhole", "logic", "worst-case", "zone-2"],
+      "estimated_brute_force_seconds": 12, "estimated_trick_seconds": 4
+    },
+    "7": {
+      "id": "fb_B6_d7", "zone": 3, "category": "invariant", "difficulty": 7, "trick_id": "B6",
+      "stem": "13 adventurers are in a room. There are 12 months in the year. What is the minimum number of adventurers guaranteed to share a birth month?",
+      "answer": 2, "answer_type": "exact",
+      "brute_force_path": "12 adventurers could each have a different birth month. The 13th must share with someone.",
+      "shortcut_path": "12 months (containers), 13 people (items). By pigeonhole, at least ⌈13/12⌉ = 2 people share a month.",
+      "shortcut_time_threshold_ms": 6000,
+      "hints": [
+        {"level": 1, "text": "How many people can have different birth months before someone must share?", "cost": 0},
+        {"level": 2, "text": "There are only 12 distinct months. How many people can be placed without any overlap?", "cost": 5},
+        {"level": 3, "text": "Once all 12 months are claimed, the very next person must repeat — think about the minimum overlap this creates.", "cost": 15}
+      ],
+      "aha_moment": "Pigeonhole: n+1 items in n containers guarantees at least one container holds 2 or more items.",
+      "flavor_text": "The guild recruits 13 adventurers. The archivist notes there are only 12 birth months. At least how many share a month?",
+      "tags": ["pigeonhole", "logic", "birthdays", "zone-3"],
+      "estimated_brute_force_seconds": 14, "estimated_trick_seconds": 4
+    }
+  },
+  "C1": {
+    "3": {
+      "id": "fb_C1_d3", "zone": 1, "category": "mental", "difficulty": 3, "trick_id": "C1",
+      "stem": "47 + 38 = ?",
+      "answer": 85, "answer_type": "exact",
+      "brute_force_path": "47 + 38: units 7+8=15, write 5 carry 1, tens 4+3+1=8. Answer: 85.",
+      "shortcut_path": "Split 38 into 30 + 8. Add 30 first: 47+30=77. Then add 8: 77+8=85.",
+      "shortcut_time_threshold_ms": 3500,
+      "hints": [
+        {"level": 1, "text": "Can you break 38 into a tens part and a units part before adding?", "cost": 0},
+        {"level": 2, "text": "Split 38 into 30 and 8. Add the tens part to 47 first.", "cost": 5},
+        {"level": 3, "text": "After adding the tens chunk, add the units chunk to complete the sum.", "cost": 15}
+      ],
+      "aha_moment": "Chunking into tens and units makes each addition step easy. Never add awkward two-digit numbers in one go.",
+      "flavor_text": "Two gem chests hold 47 and 38 gems. The dungeon map needs the total to unlock the door.",
+      "tags": ["addition", "chunking", "two-digit", "zone-1"],
+      "estimated_brute_force_seconds": 8, "estimated_trick_seconds": 2
+    },
+    "6": {
+      "id": "fb_C1_d6", "zone": 3, "category": "mental", "difficulty": 6, "trick_id": "C1",
+      "stem": "236 + 147 = ?",
+      "answer": 383, "answer_type": "exact",
+      "brute_force_path": "236 + 147: units 6+7=13 write 3 carry 1; tens 3+4+1=8; hundreds 2+1=3. Answer: 383.",
+      "shortcut_path": "Add hundreds first: 236+100=336. Then add tens: 336+40=376. Then units: 376+7=383.",
+      "shortcut_time_threshold_ms": 5000,
+      "hints": [
+        {"level": 1, "text": "Break 147 into 100 + 40 + 7. Add each chunk one at a time.", "cost": 0},
+        {"level": 2, "text": "Add 100 to 236 first, then add 40 to that result.", "cost": 5},
+        {"level": 3, "text": "Add the remaining 7 to complete the sum.", "cost": 15}
+      ],
+      "aha_moment": "Chunking by place value turns a three-digit addition into three trivial additions.",
+      "flavor_text": "The armoury holds 236 swords and receives 147 more. The quartermaster needs the total inventory.",
+      "tags": ["addition", "chunking", "three-digit", "zone-3"],
+      "estimated_brute_force_seconds": 12, "estimated_trick_seconds": 3
+    }
+  },
+  "C2": {
+    "3": {
+      "id": "fb_C2_d3", "zone": 1, "category": "mental", "difficulty": 3, "trick_id": "C2",
+      "stem": "63 + ? = 100",
+      "answer": 37, "answer_type": "exact",
+      "brute_force_path": "100 − 63 = 37",
+      "shortcut_path": "Complement of 63: units pair → 3+7=10, tens pair → 6+3+1(carry)=10. Complement = 37.",
+      "shortcut_time_threshold_ms": 3500,
+      "hints": [
+        {"level": 1, "text": "What number added to 63 gives exactly 100?", "cost": 0},
+        {"level": 2, "text": "Think about the units digit first: what must you add to 3 to reach the next multiple of 10?", "cost": 5},
+        {"level": 3, "text": "After finding the units complement, find the tens complement and combine both digits.", "cost": 15}
+      ],
+      "aha_moment": "Every number from 1 to 99 has a unique complement to 100. Knowing these pairs makes subtraction instant.",
+      "flavor_text": "The enchanted scales must reach exactly 100. One side holds 63. What weight completes the balance?",
+      "tags": ["addition", "complement-100", "mental", "zone-1"],
+      "estimated_brute_force_seconds": 8, "estimated_trick_seconds": 2
+    },
+    "6": {
+      "id": "fb_C2_d6", "zone": 3, "category": "mental", "difficulty": 6, "trick_id": "C2",
+      "stem": "348 + 152 = ?",
+      "answer": 500, "answer_type": "exact",
+      "brute_force_path": "348 + 152: units 8+2=10 write 0 carry 1; tens 4+5+1=10 write 0 carry 1; hundreds 3+1+1=5. Answer: 500.",
+      "shortcut_path": "48 + 52 = 100 (complement pair). So 348 + 152 = 300 + 100 + 100 = 500.",
+      "shortcut_time_threshold_ms": 4000,
+      "hints": [
+        {"level": 1, "text": "Look at the last two digits: 48 and 52. Do they sum to a round number?", "cost": 0},
+        {"level": 2, "text": "48 and 52 are complement pairs that sum to 100. Use that to simplify the calculation.", "cost": 5},
+        {"level": 3, "text": "Combine the hundreds digits with the complement result to find the total.", "cost": 15}
+      ],
+      "aha_moment": "Spotting complement pairs inside larger numbers lets you collapse hard additions into round-number arithmetic.",
+      "flavor_text": "Two gem deposits contain 348 and 152 crystals. The vault keeper wants the total before closing.",
+      "tags": ["addition", "complement-100", "three-digit", "zone-3"],
+      "estimated_brute_force_seconds": 12, "estimated_trick_seconds": 2
+    }
+  },
+  "C3": {
+    "4": {
+      "id": "fb_C3_d4", "zone": 2, "category": "mental", "difficulty": 4, "trick_id": "C3",
+      "stem": "97 + 36 = ?",
+      "answer": 133, "answer_type": "exact",
+      "brute_force_path": "97 + 36: units 7+6=13 write 3 carry 1; tens 9+3+1=13 write 3 carry 1; hundreds 1. Answer: 133.",
+      "shortcut_path": "97 is 3 below 100. Add 3 to reach 100: 100+36=136. Subtract the 3 we added: 136−3=133.",
+      "shortcut_time_threshold_ms": 4000,
+      "hints": [
+        {"level": 1, "text": "97 is very close to 100. Round up to 100 first.", "cost": 0},
+        {"level": 2, "text": "After rounding up to 100, add 36 to your benchmark, then plan a small correction.", "cost": 5},
+        {"level": 3, "text": "Subtract the rounding adjustment from the benchmark sum.", "cost": 15}
+      ],
+      "aha_moment": "Adjust to the nearest benchmark (100, 50, 25), do the easy addition, then correct for the adjustment.",
+      "flavor_text": "The potion shelf has 97 vials. The cart delivers 36 more. Count them quickly before the wizard returns.",
+      "tags": ["addition", "benchmark", "adjustment", "zone-2"],
+      "estimated_brute_force_seconds": 10, "estimated_trick_seconds": 2
+    },
+    "7": {
+      "id": "fb_C3_d7", "zone": 3, "category": "mental", "difficulty": 7, "trick_id": "C3",
+      "stem": "498 + 247 = ?",
+      "answer": 745, "answer_type": "exact",
+      "brute_force_path": "498 + 247: units 8+7=15 write 5 carry 1; tens 9+4+1=14 write 4 carry 1; hundreds 4+2+1=7. Answer: 745.",
+      "shortcut_path": "498 is 2 below 500. 500+247=747. Subtract the 2 we added: 747−2=745.",
+      "shortcut_time_threshold_ms": 5000,
+      "hints": [
+        {"level": 1, "text": "498 is close to 500. Round up to 500 first.", "cost": 0},
+        {"level": 2, "text": "After rounding, add 247 to the benchmark, then plan a correction.", "cost": 5},
+        {"level": 3, "text": "Subtract the rounding correction from the benchmark sum.", "cost": 15}
+      ],
+      "aha_moment": "The benchmark technique works for any near-round number: round, add, correct. Three steps faster than column addition.",
+      "flavor_text": "Two caravans carry 498 and 247 gold pieces to the capital. The treasurer must log the total before midnight.",
+      "tags": ["addition", "benchmark", "three-digit", "zone-3"],
+      "estimated_brute_force_seconds": 14, "estimated_trick_seconds": 2
+    }
+  },
+  "C4": {
+    "3": {
+      "id": "fb_C4_d3", "zone": 1, "category": "mental", "difficulty": 3, "trick_id": "C4",
+      "stem": "7 + 8 = ?",
+      "answer": 15, "answer_type": "exact",
+      "brute_force_path": "Count up from 7: 8, 9, 10, 11, 12, 13, 14, 15.",
+      "shortcut_path": "Near-doubles: 7 + 7 = 14, then add 1 more for the extra 1 in 8. 14 + 1 = 15.",
+      "shortcut_time_threshold_ms": 2500,
+      "hints": [
+        {"level": 1, "text": "7 and 8 differ by only 1. Can you use the double of one of them?", "cost": 0},
+        {"level": 2, "text": "Double the smaller number. Then note that 8 is exactly 1 more than 7.", "cost": 5},
+        {"level": 3, "text": "Add 1 to the double of the smaller number to account for the difference.", "cost": 15}
+      ],
+      "aha_moment": "Near-doubles: when two numbers differ by 1, double the smaller and add 1. Much faster than counting up.",
+      "flavor_text": "Two treasure piles hold 7 and 8 gems. How many gems total?",
+      "tags": ["addition", "near-doubles", "single-digit", "zone-1"],
+      "estimated_brute_force_seconds": 5, "estimated_trick_seconds": 1
+    },
+    "6": {
+      "id": "fb_C4_d6", "zone": 3, "category": "mental", "difficulty": 6, "trick_id": "C4",
+      "stem": "28 + 29 = ?",
+      "answer": 57, "answer_type": "exact",
+      "brute_force_path": "28 + 29: units 8+9=17 write 7 carry 1; tens 2+2+1=5. Answer: 57.",
+      "shortcut_path": "Near-doubles: 28 + 28 = 56, then add 1 for the extra 1 in 29. 56 + 1 = 57.",
+      "shortcut_time_threshold_ms": 3500,
+      "hints": [
+        {"level": 1, "text": "28 and 29 differ by 1. What is the double of 28?", "cost": 0},
+        {"level": 2, "text": "Double 28, then add 1 because 29 is one more than 28.", "cost": 5},
+        {"level": 3, "text": "Add 1 to the double of 28 to get the final answer.", "cost": 15}
+      ],
+      "aha_moment": "Near-doubles scale up: 28+29 is just as easy as 7+8 once you use the same trick.",
+      "flavor_text": "Two patrols log 28 and 29 sightings. The captain needs the combined count before the briefing.",
+      "tags": ["addition", "near-doubles", "two-digit", "zone-3"],
+      "estimated_brute_force_seconds": 8, "estimated_trick_seconds": 2
+    }
+  },
+  "C5": {
+    "3": {
+      "id": "fb_C5_d3", "zone": 1, "category": "mental", "difficulty": 3, "trick_id": "C5",
+      "stem": "5 × 18 = ?",
+      "answer": 90, "answer_type": "exact",
+      "brute_force_path": "5 × 18 = 5 × 10 + 5 × 8 = 50 + 40 = 90",
+      "shortcut_path": "5 = 10 ÷ 2. So 5 × 18 = (10 × 18) ÷ 2 = 180 ÷ 2 = 90.",
+      "shortcut_time_threshold_ms": 3000,
+      "hints": [
+        {"level": 1, "text": "5 is half of 10. Can you use 10 × 18 first?", "cost": 0},
+        {"level": 2, "text": "Multiply 18 by 10, then halve the result because 5 is half of 10.", "cost": 5},
+        {"level": 3, "text": "Halve the result of 10 × 18.", "cost": 15}
+      ],
+      "aha_moment": "5 × n = (10 × n) ÷ 2. Always multiply by 10 first (append a zero), then halve.",
+      "flavor_text": "Five adventurers each carry 18 potions. Multiply by 5 to find the total.",
+      "tags": ["multiplication", "×5", "half-of-ten", "zone-1"],
+      "estimated_brute_force_seconds": 10, "estimated_trick_seconds": 2
+    },
+    "6": {
+      "id": "fb_C5_d6", "zone": 3, "category": "mental", "difficulty": 6, "trick_id": "C5",
+      "stem": "5 × 76 = ?",
+      "answer": 380, "answer_type": "exact",
+      "brute_force_path": "5 × 76 = 5 × 70 + 5 × 6 = 350 + 30 = 380",
+      "shortcut_path": "10 × 76 = 760. Halve it: 760 ÷ 2 = 380.",
+      "shortcut_time_threshold_ms": 4000,
+      "hints": [
+        {"level": 1, "text": "What is 10 × 76?", "cost": 0},
+        {"level": 2, "text": "10 × 76 gives you twice what you need. Halve it to get 5 × 76.", "cost": 5},
+        {"level": 3, "text": "Divide the result of 10 × 76 by 2.", "cost": 15}
+      ],
+      "aha_moment": "5 × n = half of 10n. For any number, multiplying by 5 is faster than repeated addition.",
+      "flavor_text": "Five towers each hold 76 stone blocks. How many blocks in total?",
+      "tags": ["multiplication", "×5", "half-of-ten", "zone-3"],
+      "estimated_brute_force_seconds": 12, "estimated_trick_seconds": 2
+    }
+  },
+  "C6": {
+    "5": {
+      "id": "fb_C6_d5", "zone": 2, "category": "mental", "difficulty": 5, "trick_id": "C6",
+      "stem": "47 × 52 = ?",
+      "answer": 2444, "answer_type": "exact",
+      "brute_force_path": "47 × 52 = 47 × 50 + 47 × 2 = 2350 + 94 = 2444",
+      "shortcut_path": "Estimate: ≈50×50=2500. Exact: 47×52 = 47×50+47×2 = 2350+94 = 2444.",
+      "shortcut_time_threshold_ms": 6000,
+      "hints": [
+        {"level": 1, "text": "Round both numbers to 50. What is the rough estimate?", "cost": 0},
+        {"level": 2, "text": "Use 50 × 50 as an upper bound estimate, then tighten by computing 47 × 50.", "cost": 5},
+        {"level": 3, "text": "Add 47 × 2 to the result of 47 × 50 to account for the extra 2 in 52.", "cost": 15}
+      ],
+      "aha_moment": "Estimating first sets bounds. If your precise answer falls outside those bounds, you know to recheck.",
+      "flavor_text": "The cartographer estimates 47 × 52 map squares. Set your bounds first, then calculate precisely.",
+      "tags": ["multiplication", "estimation", "bounds", "zone-2"],
+      "estimated_brute_force_seconds": 16, "estimated_trick_seconds": 5
+    },
+    "8": {
+      "id": "fb_C6_d8", "zone": 4, "category": "mental", "difficulty": 8, "trick_id": "C6",
+      "stem": "198 × 32 = ?",
+      "answer": 6336, "answer_type": "exact",
+      "brute_force_path": "198 × 32 = 190 × 32 + 8 × 32 = 6080 + 256 = 6336",
+      "shortcut_path": "198 ≈ 200. (200−2)×32 = 6400−64 = 6336.",
+      "shortcut_time_threshold_ms": 7000,
+      "hints": [
+        {"level": 1, "text": "198 is very close to 200. What is 200 × 32?", "cost": 0},
+        {"level": 2, "text": "Multiply 200 by 32, then adjust downward because 198 = 200 − 2.", "cost": 5},
+        {"level": 3, "text": "Subtract 2 × 32 from the result of 200 × 32.", "cost": 15}
+      ],
+      "aha_moment": "Near-round multiplication: compute from the round number, then adjust by the small difference.",
+      "flavor_text": "The siege engine fires 198 shots in 32 volleys. The commander needs the total shot count fast.",
+      "tags": ["multiplication", "estimation", "near-round", "zone-4"],
+      "estimated_brute_force_seconds": 20, "estimated_trick_seconds": 5
+    }
+  },
+  "C7": {
+    "4": {
+      "id": "fb_C7_d4", "zone": 2, "category": "mental", "difficulty": 4, "trick_id": "C7",
+      "stem": "4 × 63 = ?",
+      "answer": 252, "answer_type": "exact",
+      "brute_force_path": "63 × 4: units 3×4=12 write 2 carry 1; tens 6×4+1=25. Answer: 252.",
+      "shortcut_path": "Left-to-right: 4×60=240 first, then 4×3=12. Total: 240+12=252.",
+      "shortcut_time_threshold_ms": 4000,
+      "hints": [
+        {"level": 1, "text": "Start with the most significant digit. What is 4 × 60?", "cost": 0},
+        {"level": 2, "text": "Multiply 4 by the tens part of 63, then multiply 4 by the units part separately.", "cost": 5},
+        {"level": 3, "text": "Add the two partial products together.", "cost": 15}
+      ],
+      "aha_moment": "Left-to-right multiplication gives a useful approximation immediately and refines it — you know the ballpark before you finish.",
+      "flavor_text": "Four wagons each carry 63 barrels. The toll collector calculates from left to right.",
+      "tags": ["multiplication", "left-to-right", "two-digit", "zone-2"],
+      "estimated_brute_force_seconds": 10, "estimated_trick_seconds": 3
+    },
+    "7": {
+      "id": "fb_C7_d7", "zone": 3, "category": "mental", "difficulty": 7, "trick_id": "C7",
+      "stem": "7 × 86 = ?",
+      "answer": 602, "answer_type": "exact",
+      "brute_force_path": "86 × 7: units 6×7=42 write 2 carry 4; tens 8×7+4=60. Answer: 602.",
+      "shortcut_path": "Left-to-right: 7×80=560, then 7×6=42. Total: 560+42=602.",
+      "shortcut_time_threshold_ms": 5000,
+      "hints": [
+        {"level": 1, "text": "Start with the tens digit of 86. What is 7 × 80?", "cost": 0},
+        {"level": 2, "text": "Multiply 7 by 80, then separately multiply 7 by 6.", "cost": 5},
+        {"level": 3, "text": "Add the two partial products to complete the multiplication.", "cost": 15}
+      ],
+      "aha_moment": "Left-to-right multiplication produces the most significant digits first, so you always have a useful partial answer.",
+      "flavor_text": "Seven battalions each march 86 paces. The general needs the total distance before the signal.",
+      "tags": ["multiplication", "left-to-right", "two-digit", "zone-3"],
+      "estimated_brute_force_seconds": 14, "estimated_trick_seconds": 3
+    }
+  },
+  "D1": {
+    "4": {
+      "id": "fb_D1_d4", "zone": 2, "category": "structural", "difficulty": 4, "trick_id": "D1",
+      "stem": "Sum the symmetric staircase: 1 + 2 + 3 + 4 + 4 + 3 + 2 + 1 = ?",
+      "answer": 20, "answer_type": "exact",
+      "brute_force_path": "1+2=3, 3+3=6, 6+4=10, 10+4=14, 14+3=17, 17+2=19, 19+1=20.",
+      "shortcut_path": "The sequence is symmetric. Sum one half: 1+2+3+4=10. Double it: 10×2=20.",
+      "shortcut_time_threshold_ms": 5000,
+      "hints": [
+        {"level": 1, "text": "The pattern goes up then back down symmetrically. What is the sum of the first half?", "cost": 0},
+        {"level": 2, "text": "Sum just the ascending half of the sequence (1+2+3+4).", "cost": 5},
+        {"level": 3, "text": "Double the half-sum to get the full total.", "cost": 15}
+      ],
+      "aha_moment": "In any symmetric arrangement, find the total by summing one half and doubling.",
+      "flavor_text": "The staircase in the tower rises then falls: 1, 2, 3, 4, 4, 3, 2, 1 steps per floor. Total steps?",
+      "tags": ["symmetry", "addition", "doubling", "zone-2"],
+      "estimated_brute_force_seconds": 12, "estimated_trick_seconds": 3
+    },
+    "7": {
+      "id": "fb_D1_d7", "zone": 3, "category": "structural", "difficulty": 7, "trick_id": "D1",
+      "stem": "Sum the symmetric pattern: 5 + 7 + 9 + 11 + 11 + 9 + 7 + 5 = ?",
+      "answer": 64, "answer_type": "exact",
+      "brute_force_path": "5+7=12, 12+9=21, 21+11=32, 32+11=43, 43+9=52, 52+7=59, 59+5=64.",
+      "shortcut_path": "Symmetric: sum one half: 5+7+9+11=32. Double: 32×2=64.",
+      "shortcut_time_threshold_ms": 5000,
+      "hints": [
+        {"level": 1, "text": "The sequence is symmetric around the middle. Sum just the first four terms.", "cost": 0},
+        {"level": 2, "text": "Sum the first four terms, then use symmetry to find the total without adding the rest.", "cost": 5},
+        {"level": 3, "text": "Double the half-sum.", "cost": 15}
+      ],
+      "aha_moment": "Symmetry is a shortcut: count one side, double the result, and you are done.",
+      "flavor_text": "The crystal bridge has a symmetric arch: 5, 7, 9, 11, 11, 9, 7, 5 stones per section. Total stones?",
+      "tags": ["symmetry", "addition", "doubling", "zone-3"],
+      "estimated_brute_force_seconds": 16, "estimated_trick_seconds": 3
+    }
+  },
+  "D2": {
+    "4": {
+      "id": "fb_D2_d4", "zone": 2, "category": "structural", "difficulty": 4, "trick_id": "D2",
+      "stem": "A creature gains 5 HP and loses 3 HP each round. What is its net HP change after 6 rounds?",
+      "answer": 12, "answer_type": "exact",
+      "brute_force_path": "Track each round: +2, +2, +2, +2, +2, +2 = 12.",
+      "shortcut_path": "Net change per round = 5 − 3 = 2. After 6 rounds: 2 × 6 = 12.",
+      "shortcut_time_threshold_ms": 4000,
+      "hints": [
+        {"level": 1, "text": "What is the net change per single round?", "cost": 0},
+        {"level": 2, "text": "Find the net change per round by combining the gain and the loss.", "cost": 5},
+        {"level": 3, "text": "Multiply the net change per round by 6.", "cost": 15}
+      ],
+      "aha_moment": "Find the invariant change per step, then multiply by the number of steps. Never track each step individually.",
+      "flavor_text": "The dungeon creature regenerates and takes damage each round. Find the net result after 6 rounds.",
+      "tags": ["state-transitions", "net-change", "multiplication", "zone-2"],
+      "estimated_brute_force_seconds": 12, "estimated_trick_seconds": 3
+    },
+    "7": {
+      "id": "fb_D2_d7", "zone": 3, "category": "structural", "difficulty": 7, "trick_id": "D2",
+      "stem": "Start at 100. Each step: multiply by 2, then subtract 50. What is the value after 3 steps?",
+      "answer": 450, "answer_type": "exact",
+      "brute_force_path": "Step 1: 100×2=200, 200−50=150. Step 2: 150×2=300, 300−50=250. Step 3: 250×2=500, 500−50=450.",
+      "shortcut_path": "Track the state transition f(x) = 2x − 50. Step 1: f(100)=150. Step 2: f(150)=250. Step 3: f(250)=450.",
+      "shortcut_time_threshold_ms": 7000,
+      "hints": [
+        {"level": 1, "text": "What is the result after just the first step?", "cost": 0},
+        {"level": 2, "text": "Apply the rule to 100 to get step 1's result, then apply the same rule to that result for step 2.", "cost": 5},
+        {"level": 3, "text": "Apply the rule one final time to step 2's result.", "cost": 15}
+      ],
+      "aha_moment": "State transition problems: apply the rule step by step, carrying each result forward.",
+      "flavor_text": "A magical spring doubles its water and loses 50 litres each day. Starting at 100, what remains after 3 days?",
+      "tags": ["state-transitions", "iteration", "multiplication", "zone-3"],
+      "estimated_brute_force_seconds": 18, "estimated_trick_seconds": 6
+    }
+  },
+  "D3": {
+    "4": {
+      "id": "fb_D3_d4", "zone": 2, "category": "structural", "difficulty": 4, "trick_id": "D3",
+      "stem": "3x = 21. What is x?",
+      "answer": 7, "answer_type": "exact",
+      "brute_force_path": "Try x = 7: 3 × 7 = 21. Correct.",
+      "shortcut_path": "Divide both sides by 3 to keep the equation balanced: x = 21 ÷ 3 = 7.",
+      "shortcut_time_threshold_ms": 3500,
+      "hints": [
+        {"level": 1, "text": "The equation is balanced. What operation isolates x on one side?", "cost": 0},
+        {"level": 2, "text": "Divide both sides by 3.", "cost": 5},
+        {"level": 3, "text": "After dividing both sides by 3, x equals 21 ÷ 3.", "cost": 15}
+      ],
+      "aha_moment": "Divide both sides by the same number to isolate the variable without breaking the balance.",
+      "flavor_text": "Three equal treasure chests hold 21 coins combined. One chest holds x coins. What is x?",
+      "tags": ["algebra", "balance", "division", "zone-2"],
+      "estimated_brute_force_seconds": 8, "estimated_trick_seconds": 2
+    },
+    "7": {
+      "id": "fb_D3_d7", "zone": 3, "category": "structural", "difficulty": 7, "trick_id": "D3",
+      "stem": "5x + 3 = 28. What is x?",
+      "answer": 5, "answer_type": "exact",
+      "brute_force_path": "Try x = 5: 5×5 + 3 = 25 + 3 = 28. Correct.",
+      "shortcut_path": "Subtract 3 from both sides: 5x = 25. Divide both sides by 5: x = 5.",
+      "shortcut_time_threshold_ms": 4000,
+      "hints": [
+        {"level": 1, "text": "Remove the + 3 from the left side first. Apply the same operation to both sides.", "cost": 0},
+        {"level": 2, "text": "Subtract 3 from both sides to isolate the 5x term.", "cost": 5},
+        {"level": 3, "text": "Once the x-term is isolated, divide both sides by its coefficient.", "cost": 15}
+      ],
+      "aha_moment": "Two-step equations: undo addition/subtraction first, then undo multiplication/division.",
+      "flavor_text": "The alchemist's formula is 5x + 3 = 28. Solve for x to unlock the secret ingredient.",
+      "tags": ["algebra", "balance", "two-step", "zone-3"],
+      "estimated_brute_force_seconds": 12, "estimated_trick_seconds": 3
+    }
+  },
+  "D4": {
+    "5": {
+      "id": "fb_D4_d5", "zone": 2, "category": "structural", "difficulty": 5, "trick_id": "D4",
+      "stem": "1 + 2 + 4 + 8 + 16 = ?",
+      "answer": 31, "answer_type": "exact",
+      "brute_force_path": "1+2=3, 3+4=7, 7+8=15, 15+16=31.",
+      "shortcut_path": "5 terms in a doubling series starting at 1: sum = 2⁵ − 1 = 32 − 1 = 31.",
+      "shortcut_time_threshold_ms": 4000,
+      "hints": [
+        {"level": 1, "text": "Each term is double the previous. How many terms are there?", "cost": 0},
+        {"level": 2, "text": "5 terms. The sum formula is 2ⁿ − 1 where n is the number of terms.", "cost": 5},
+        {"level": 3, "text": "Calculate 2 raised to the power of 5, then subtract 1.", "cost": 15}
+      ],
+      "aha_moment": "The sum of a doubling series starting at 1 is always one less than the next power of 2.",
+      "flavor_text": "A rumour spreads: 1 person tells 2, each tells 2 more, for 5 rounds. Total people who heard it?",
+      "tags": ["geometric-series", "powers-of-2", "doubling", "zone-2"],
+      "estimated_brute_force_seconds": 10, "estimated_trick_seconds": 2
+    },
+    "8": {
+      "id": "fb_D4_d8", "zone": 4, "category": "structural", "difficulty": 8, "trick_id": "D4",
+      "stem": "1 + 2 + 4 + 8 + 16 + 32 + 64 + 128 = ?",
+      "answer": 255, "answer_type": "exact",
+      "brute_force_path": "1+2=3, 3+4=7, 7+8=15, 15+16=31, 31+32=63, 63+64=127, 127+128=255.",
+      "shortcut_path": "8 terms doubling from 1: sum = 2⁸ − 1 = 256 − 1 = 255.",
+      "shortcut_time_threshold_ms": 5000,
+      "hints": [
+        {"level": 1, "text": "Count the terms. Is there a formula for summing a doubling series?", "cost": 0},
+        {"level": 2, "text": "8 terms. Sum = 2ⁿ − 1 where n = number of terms.", "cost": 5},
+        {"level": 3, "text": "Calculate 2 raised to the power of 8, then subtract 1.", "cost": 15}
+      ],
+      "aha_moment": "The sum of a doubling series is approximately twice its largest term: 128 × 2 − 1 = 255.",
+      "flavor_text": "Eight generations of a dragon family: 1, 2, 4, 8, 16, 32, 64, 128. Total descendants?",
+      "tags": ["geometric-series", "powers-of-2", "doubling", "zone-4"],
+      "estimated_brute_force_seconds": 18, "estimated_trick_seconds": 3
+    }
+  },
+  "D5": {
+    "4": {
+      "id": "fb_D5_d4", "zone": 2, "category": "structural", "difficulty": 4, "trick_id": "D5",
+      "stem": "6 adventurers each shake hands with every other adventurer exactly once. How many handshakes?",
+      "answer": 15, "answer_type": "exact",
+      "brute_force_path": "5+4+3+2+1 = 15.",
+      "shortcut_path": "Triangular number formula: n(n−1)÷2 = 6×5÷2 = 30÷2 = 15.",
+      "shortcut_time_threshold_ms": 4000,
+      "hints": [
+        {"level": 1, "text": "Each adventurer shakes hands with every other one. Count unique pairs.", "cost": 0},
+        {"level": 2, "text": "Number of pairs from n people = n(n−1)÷2. With n=6: apply 6×5÷2.", "cost": 5},
+        {"level": 3, "text": "Multiply n(n−1) and then halve the result.", "cost": 15}
+      ],
+      "aha_moment": "Handshake problems and staircase sums share the triangular number formula: n(n−1)÷2.",
+      "flavor_text": "Six guild members meet for the first time. Each shakes hands with every other. How many handshakes occur?",
+      "tags": ["triangular-numbers", "combinations", "formula", "zone-2"],
+      "estimated_brute_force_seconds": 12, "estimated_trick_seconds": 3
+    },
+    "7": {
+      "id": "fb_D5_d7", "zone": 3, "category": "structural", "difficulty": 7, "trick_id": "D5",
+      "stem": "1 + 2 + 3 + 4 + 5 + 6 + 7 + 8 + 9 + 10 = ?",
+      "answer": 55, "answer_type": "exact",
+      "brute_force_path": "1+2=3, 3+3=6, 6+4=10, 10+5=15, 15+6=21, 21+7=28, 28+8=36, 36+9=45, 45+10=55.",
+      "shortcut_path": "Sum of 1 to n = n(n+1)÷2. Here n=10: 10×11÷2 = 110÷2 = 55.",
+      "shortcut_time_threshold_ms": 4000,
+      "hints": [
+        {"level": 1, "text": "Is there a formula for the sum of the first n whole numbers?", "cost": 0},
+        {"level": 2, "text": "Sum = n(n+1)÷2. With n=10: apply 10×11÷2.", "cost": 5},
+        {"level": 3, "text": "Compute n(n+1) first, then halve the result.", "cost": 15}
+      ],
+      "aha_moment": "1+2+…+n = n(n+1)÷2. Pairing smallest and largest: 1+10=11, 2+9=11, … five pairs of 11.",
+      "flavor_text": "Ten floors of the tower each add one step to the staircase. Total steps from floor 1 to floor 10?",
+      "tags": ["triangular-numbers", "summation", "formula", "zone-3"],
+      "estimated_brute_force_seconds": 16, "estimated_trick_seconds": 3
+    }
+  }
+}

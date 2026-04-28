@@ -1,0 +1,179 @@
+{
+  "tricks": [
+    {
+      "trick_id": "A1",
+      "name": "×11 Digit-Sum Rule",
+      "category": "A",
+      "category_name": "Pattern Shortcuts",
+      "description": "11 × AB = A(A+B)B for two-digit numbers where A+B < 10. When A+B >= 10, carry the tens digit into A. E.g. 11 × 23 = 253 (2, 2+3=5, 3). For 11 × 39: 3+9=12, carry gives 4(2)9 = 429."
+    },
+    {
+      "trick_id": "A2",
+      "name": "×9 Complement Rule",
+      "category": "A",
+      "category_name": "Pattern Shortcuts",
+      "description": "9 × n = 10n − n. This means you multiply by 10 (shift left) then subtract the original number. Also: the digit sum of any multiple of 9 is itself a multiple of 9. E.g. 9 × 7 = 70 − 7 = 63, and 6+3 = 9."
+    },
+    {
+      "trick_id": "A3",
+      "name": "Doubling Chains",
+      "category": "A",
+      "category_name": "Pattern Shortcuts",
+      "description": "×2, ×4, ×8, ×16 form a doubling chain. 4 × n = 2 × (2n). 8 × n = 2 × (4n). 16 × n = 2 × (8n). Any power-of-2 multiplier can be computed by repeated doubling instead of direct multiplication. E.g. 8 × 13: double 13 → 26 → 52 → 104."
+    },
+    {
+      "trick_id": "A4",
+      "name": "Near-Square Identity",
+      "category": "A",
+      "category_name": "Pattern Shortcuts",
+      "description": "(n+1)² = n² + 2n + 1. Knowing one perfect square lets you derive the next instantly. E.g. knowing 7² = 49: 8² = 49 + 2(7) + 1 = 49 + 15 = 64. And 9² from 8²: 64 + 16 + 1 = 81."
+    },
+    {
+      "trick_id": "A5",
+      "name": "Sum of First N Odd Numbers",
+      "category": "A",
+      "category_name": "Pattern Shortcuts",
+      "description": "1 + 3 + 5 + ... + (2n−1) = n². The sum of the first n odd numbers is always a perfect square. E.g. 1+3+5+7 = 16 = 4². First 5 odd numbers: 1+3+5+7+9 = 25 = 5²."
+    },
+    {
+      "trick_id": "A6",
+      "name": "Difference of Squares",
+      "category": "A",
+      "category_name": "Pattern Shortcuts",
+      "description": "a² − b² = (a+b)(a−b). Factoring a difference of squares converts hard subtraction into two simpler multiplications. E.g. 8² − 5² = (8+5)(8−5) = 13 × 3 = 39."
+    },
+    {
+      "trick_id": "A7",
+      "name": "×25 and ×125 via 100/4 and 1000/8",
+      "category": "A",
+      "category_name": "Pattern Shortcuts",
+      "description": "25 × n = 100n / 4. Multiply by 100 then divide by 4. 125 × n = 1000n / 8. Multiply by 1000 then divide by 8. Works because 25 = 100/4 and 125 = 1000/8. E.g. 25 × 36 = 3600 / 4 = 900."
+    },
+    {
+      "trick_id": "B1",
+      "name": "Parity Invariant",
+      "category": "B",
+      "category_name": "Invariants",
+      "description": "Odd+Odd=Even. Even+Even=Even. Odd+Even=Odd. For multiplication: Odd×Odd=Odd, anything×Even=Even. Parity is preserved under addition and multiplication, allowing instant elimination of wrong-parity answers without full computation. E.g. 47 × 83: both odd → product is odd."
+    },
+    {
+      "trick_id": "B2",
+      "name": "Perimeter Invariance",
+      "category": "B",
+      "category_name": "Invariants",
+      "description": "Rearranging a fixed set of tiles changes perimeter but preserves total area. E.g. four 1×1 tiles arranged 1×4 give perimeter 10; arranged 2×2 give perimeter 8. Area stays 4 in both cases. Teaches that invariants (area) and non-invariants (perimeter) behave differently under rearrangement."
+    },
+    {
+      "trick_id": "B3",
+      "name": "Conservation of Sum",
+      "category": "B",
+      "category_name": "Invariants",
+      "description": "Adding the same value to both sides of an equation preserves equality. Multiplying both sides by the same nonzero value preserves equality. This is the foundation of algebraic manipulation. E.g. x + 5 = 12 → subtract 5 from both sides → x = 7."
+    },
+    {
+      "trick_id": "B4",
+      "name": "Modular Arithmetic (Clock Arithmetic)",
+      "category": "B",
+      "category_name": "Invariants",
+      "description": "Numbers cycle with a fixed period (modulus). 7 mod 3 = 1 because 7 = 2×3 + 1. The clock face is the natural model: 14:00 is 2 PM because 14 mod 12 = 2. E.g. what day is 100 days from Monday? 100 mod 7 = 2, so Wednesday."
+    },
+    {
+      "trick_id": "B5",
+      "name": "Digit Sum Divisibility",
+      "category": "B",
+      "category_name": "Invariants",
+      "description": "A number is divisible by 9 if its digit sum is divisible by 9. A number is divisible by 3 if its digit sum is divisible by 3. This works because 10 ≡ 1 (mod 9). E.g. is 4518 divisible by 9? 4+5+1+8 = 18, and 18÷9 = 2. Yes."
+    },
+    {
+      "trick_id": "B6",
+      "name": "Pigeonhole Principle",
+      "category": "B",
+      "category_name": "Invariants",
+      "description": "If N items are distributed into fewer than N containers, at least one container must hold more than one item. Proves existence without finding the specific case. E.g. 13 socks in 12 colour slots → at least one colour has 2 or more socks."
+    },
+    {
+      "trick_id": "C1",
+      "name": "Chunking",
+      "category": "C",
+      "category_name": "Mental Acceleration",
+      "description": "Decompose a number into landmark-friendly pieces before adding or multiplying. E.g. 47 + 38: split 38 into 30+8, add 30 first → 77, then add 8 → 85. Breaking into tens and units makes each step trivial."
+    },
+    {
+      "trick_id": "C2",
+      "name": "Complement to 100",
+      "category": "C",
+      "category_name": "Mental Acceleration",
+      "description": "Every number from 1–99 has a complement that sums to 100. E.g. 63 + 37 = 100, 48 + 52 = 100. These pairs should be automatic. To find 100 − 63: the complement is 37 because 60+40=100 and 3−3=0. Extends to complement-to-1000 for three-digit work."
+    },
+    {
+      "trick_id": "C3",
+      "name": "Benchmark Numbers",
+      "category": "C",
+      "category_name": "Mental Acceleration",
+      "description": "Use 10, 25, 50, 100, 1000 as mental anchors. Adjust from the nearest benchmark instead of computing from scratch. E.g. 97 + 36: go up to 100 (add 3), add 36 to get 136, then subtract the 3 → 133."
+    },
+    {
+      "trick_id": "C4",
+      "name": "Near-Doubles",
+      "category": "C",
+      "category_name": "Mental Acceleration",
+      "description": "When two numbers differ by 1 or 2, compute the double of the smaller and adjust. E.g. 6+7 = 6+6+1 = 13. 8+9 = 8+8+1 = 17. Reduces unfamiliar addition to a known double plus a small correction."
+    },
+    {
+      "trick_id": "C5",
+      "name": "×5 via Half-of-Ten",
+      "category": "C",
+      "category_name": "Mental Acceleration",
+      "description": "5 × n = (10 × n) / 2. Multiply by 10 (append a zero) then halve the result. E.g. 5 × 18 = 180 / 2 = 90. 5 × 34 = 340 / 2 = 170. Much faster than repeated addition for larger values."
+    },
+    {
+      "trick_id": "C6",
+      "name": "Estimation and Bounds",
+      "category": "C",
+      "category_name": "Mental Acceleration",
+      "description": "Before computing precisely, establish upper and lower bounds: is the answer closer to 100 or 1000? Is it odd or even? E.g. 47 × 52 ≈ 50 × 50 = 2500, so the actual answer (2444) must be near 2500 — any answer below 2000 or above 3000 is wrong."
+    },
+    {
+      "trick_id": "C7",
+      "name": "Left-to-Right Multiplication",
+      "category": "C",
+      "category_name": "Mental Acceleration",
+      "description": "Multiply from the most significant digit first. E.g. 3 × 47: compute 3×40=120, then 3×7=21, total=141. This produces a useful approximation immediately and refines it — the reverse of the school algorithm which withholds all meaning until the final step."
+    },
+    {
+      "trick_id": "D1",
+      "name": "Symmetry and Half-Double",
+      "category": "D",
+      "category_name": "Structural Thinking",
+      "description": "If a shape, sequence, or arrangement is symmetric, its total is twice its half. Count or sum one side, then double. E.g. symmetric layout with left side 1+2+3+4 = 10 → total = 20. Applies to symmetric expressions: (a+b) + (a−b) = 2a."
+    },
+    {
+      "trick_id": "D2",
+      "name": "State Transitions",
+      "category": "D",
+      "category_name": "Structural Thinking",
+      "description": "Track what changes and what stays fixed across a sequence of operations. Identify the invariant — the quantity that does not change — then use it to jump directly to the end state. E.g. a creature gains 3 HP and loses 2 HP each round: net +1 per round, so after 8 rounds it has +8 HP."
+    },
+    {
+      "trick_id": "D3",
+      "name": "Balance / Equilibrium",
+      "category": "D",
+      "category_name": "Structural Thinking",
+      "description": "An equation is a balanced system. Any operation applied equally to both sides preserves the balance. This is the foundation of algebra. E.g. 3x = 21: divide both sides by 3 → x = 7. If both sides still balance, the operation was valid."
+    },
+    {
+      "trick_id": "D4",
+      "name": "Geometric Series Intuition",
+      "category": "D",
+      "category_name": "Structural Thinking",
+      "description": "1 + 2 + 4 + 8 + ... doubles each step. After n steps starting from 1, the sum = 2ⁿ − 1. E.g. 10 steps: 1+2+4+...+512 = 1023 = 2¹⁰ − 1. The sum of a geometric series with ratio 2 is approximately twice its largest term."
+    },
+    {
+      "trick_id": "D5",
+      "name": "Triangular Numbers",
+      "category": "D",
+      "category_name": "Structural Thinking",
+      "description": "1 + 2 + 3 + ... + n = n(n+1)/2. These appear in staircase problems, handshake problems, and any problem where every pair in a group interacts once. E.g. how many handshakes do 6 people exchange? 6×5/2 = 15."
+    }
+  ]
+}

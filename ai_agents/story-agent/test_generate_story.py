@@ -8,7 +8,7 @@ output shape, input validation, and error handling.
 
 import pytest
 from unittest.mock import MagicMock, patch
-from generate_story import _build_system_prompt, generate_story
+from generate_story import _build_system_prompt, _parse_chapters, generate_story
 
 
 class TestBuildSystemPrompt:
@@ -52,6 +52,46 @@ class TestBuildSystemPrompt:
         assert "cache_control" not in result[0]
 
 
+class TestParseChapters:
+    """
+    Tests for _parse_chapters().
+    Covers: single chapter, multiple chapters, whitespace stripping, no labels.
+    """
+
+    def test_returns_list(self):
+        # list — result must always be a list
+        result = _parse_chapters("CHAPTER 1: Mira walked up the hill.")
+        assert isinstance(result, list)
+
+    def test_single_chapter_extracted(self):
+        # list[str] — one chapter in, one string out, label removed
+        result = _parse_chapters("CHAPTER 1: Mira walked up the hill.")
+        assert result == ["Mira walked up the hill."]
+
+    def test_multiple_chapters_extracted(self):
+        # list[str] — each chapter becomes its own string, labels removed
+        result = _parse_chapters(
+            "CHAPTER 1: Mira walked up the hill.\n\nCHAPTER 2: She found a door."
+        )
+        assert result == ["Mira walked up the hill.", "She found a door."]
+
+    def test_strips_whitespace_from_each_chapter(self):
+        # list[str] — leading and trailing whitespace inside each chapter is removed
+        result = _parse_chapters("CHAPTER 1:   Mira walked.   \n\nCHAPTER 2:   She found.   ")
+        assert result[0] == "Mira walked."
+        assert result[1] == "She found."
+
+    def test_returns_full_text_as_single_chapter_when_no_labels(self):
+        # list[str] — plain text with no chapter labels is returned as a single-item list
+        result = _parse_chapters("No chapter labels here at all.")
+        assert result == ["No chapter labels here at all."]
+
+    def test_handles_varying_whitespace_around_colon(self):
+        # list[str] — "CHAPTER 1 :" and "CHAPTER 1:" both match
+        result = _parse_chapters("CHAPTER 1 : Mira found the door.")
+        assert result == ["Mira found the door."]
+
+
 class TestGenerateStory:
     """
     Tests for generate_story().
@@ -84,75 +124,92 @@ class TestGenerateStory:
         return response
 
     @patch("generate_story.anthropic.Anthropic")
-    def test_returns_content_and_word_count_keys(self, mock_anthropic_class):
-        # dict — result must contain both "content" and "word_count" keys
+    def test_returns_chapters_and_word_count_keys(self, mock_anthropic_class):
+        # dict — result must contain both "chapters" and "word_count" keys
         mock_client = MagicMock()
         mock_anthropic_class.return_value = mock_client
         mock_client.messages.create.return_value = self._make_mock_response(
-            "Yousef climbed the steep path to the gate."
+            "CHAPTER 1: Yousef climbed the steep path."
         )
 
         # dict — result from generate_story given a parent prompt
         result = generate_story("Write a story about a boy who solves a math puzzle.")
 
-        assert "content" in result
+        assert "chapters" in result
         assert "word_count" in result
 
     @patch("generate_story.anthropic.Anthropic")
-    def test_content_matches_api_response(self, mock_anthropic_class):
-        # str — content must match the text returned by the API
+    def test_chapters_is_a_list(self, mock_anthropic_class):
+        # list — "chapters" value must always be a list
         mock_client = MagicMock()
         mock_anthropic_class.return_value = mock_client
         mock_client.messages.create.return_value = self._make_mock_response(
-            "Yousef climbed the steep path to the gate."
+            "CHAPTER 1: Yousef climbed the steep path."
         )
 
         # dict — result from generate_story
         result = generate_story("Write a story about a boy who solves a math puzzle.")
 
-        assert result["content"] == "Yousef climbed the steep path to the gate."
+        assert isinstance(result["chapters"], list)
 
     @patch("generate_story.anthropic.Anthropic")
-    def test_word_count_is_correct(self, mock_anthropic_class):
-        # int — word_count must equal the actual number of words in content
+    def test_chapters_contain_correct_text(self, mock_anthropic_class):
+        # list[str] — each chapter string must match the parsed text, label removed
         mock_client = MagicMock()
         mock_anthropic_class.return_value = mock_client
         mock_client.messages.create.return_value = self._make_mock_response(
-            "Yousef climbed the steep path to the gate."
+            "CHAPTER 1: Yousef climbed the path.\n\nCHAPTER 2: He solved the puzzle."
         )
 
-        # dict — 8 words in the story above
+        # dict — result from generate_story
+        result = generate_story("Write a story about a boy who solves a math puzzle.")
+
+        assert result["chapters"] == [
+            "Yousef climbed the path.",
+            "He solved the puzzle.",
+        ]
+
+    @patch("generate_story.anthropic.Anthropic")
+    def test_word_count_is_correct(self, mock_anthropic_class):
+        # int — word_count must equal the total words across all chapter texts
+        mock_client = MagicMock()
+        mock_anthropic_class.return_value = mock_client
+        mock_client.messages.create.return_value = self._make_mock_response(
+            "CHAPTER 1: Yousef climbed the steep path to the gate."
+        )
+
+        # dict — 8 words in the chapter text above ("Yousef climbed the steep path to the gate.")
         result = generate_story("Write a story about a boy who solves a math puzzle.")
 
         assert result["word_count"] == 8
 
     @patch("generate_story.anthropic.Anthropic")
-    def test_strips_leading_and_trailing_whitespace(self, mock_anthropic_class):
-        # str — content must be stripped even when the API returns padded text
+    def test_strips_whitespace_from_each_chapter(self, mock_anthropic_class):
+        # list[str] — each chapter string must be stripped of surrounding whitespace
         mock_client = MagicMock()
         mock_anthropic_class.return_value = mock_client
         mock_client.messages.create.return_value = self._make_mock_response(
-            "  A child crossed the bridge.  "
+            "CHAPTER 1:   A child crossed the bridge.   "
         )
 
-        # dict — content must equal the stripped version
+        # dict — chapter text must equal the stripped version
         result = generate_story("Write a story about a child.")
 
-        assert result["content"] == "A child crossed the bridge."
+        assert result["chapters"][0] == "A child crossed the bridge."
 
     @patch("generate_story.anthropic.Anthropic")
-    def test_word_count_reflects_stripped_content(self, mock_anthropic_class):
-        # int — word_count must be computed after stripping, not from raw API text
+    def test_word_count_excludes_chapter_labels(self, mock_anthropic_class):
+        # int — chapter labels ("CHAPTER 1:") must not be counted in word_count
         mock_client = MagicMock()
         mock_anthropic_class.return_value = mock_client
         mock_client.messages.create.return_value = self._make_mock_response(
-            "  One two three.  "
+            "CHAPTER 1: One two three."
         )
 
-        # dict — word_count must match the word count of the stripped content
+        # dict — word_count must equal the sum of words across chapter texts only
         result = generate_story("Write a story about a child.")
 
-        assert result["word_count"] == len(result["content"].split())
+        assert result["word_count"] == sum(len(ch.split()) for ch in result["chapters"])
 
     @patch("generate_story.anthropic.Anthropic")
     def test_raises_when_response_has_no_text_block(self, mock_anthropic_class):

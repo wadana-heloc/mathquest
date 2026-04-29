@@ -10,6 +10,7 @@ after they have verified the parent session and checked the rate limit.
 """
 
 import os
+import re
 import anthropic
 from dotenv import load_dotenv
 from config import MODEL, MAX_TOKENS, PROMPT_CACHING_ENABLED
@@ -34,8 +35,7 @@ STRICT RULES:
 STYLE GUIDANCE: Match the tone and vocabulary of the example story provided.
 Use the style notes if provided. If no style notes, keep the tone from the example.
 
-OUTPUT: Plain text only. No markdown. No headers. No bullet points. No formatting of any kind.
-Begin the story immediately - no preamble, no title, no 'Here is your story:'."""
+OUTPUT: Divide the story into 3 to 5 chapters. Label each chapter exactly as "CHAPTER 1:", "CHAPTER 2:", etc. on its own line, followed by 2 to 4 sentences of story content. No markdown. No bullet points. No other formatting. Begin immediately with "CHAPTER 1:" — no preamble, no title, no "Here is your story:"."""
 
 
 def _build_system_prompt() -> list:
@@ -68,6 +68,27 @@ def _build_system_prompt() -> list:
     return [block]
 
 
+def _parse_chapters(text: str) -> list:
+    """
+    What it does:
+        Splits a chapter-labelled story into a list of chapter text strings.
+        Expects labels like "CHAPTER 1:", "CHAPTER 2:", etc. produced by the system prompt.
+
+    Returns:
+        list[str] — one string per chapter, whitespace stripped, labels removed
+
+    Example input:
+        "CHAPTER 1: Mira walked up the hill.\n\nCHAPTER 2: She found a glowing door."
+
+    Example output:
+        ["Mira walked up the hill.", "She found a glowing door."]
+    """
+    # list[str] — split on "CHAPTER N:" pattern; the text before the first label is empty
+    parts = re.split(r'CHAPTER\s+\d+\s*:', text)
+    # list[str] — remove empty entries and strip surrounding whitespace from each chapter
+    return [part.strip() for part in parts if part.strip()]
+
+
 def generate_story(parent_prompt: str) -> dict:
     """
     What it does:
@@ -76,15 +97,18 @@ def generate_story(parent_prompt: str) -> dict:
 
     Returns:
         dict with two keys:
-            "content"    — str, plain text story, no markdown, no headers
-            "word_count" — int, number of words in the generated story
+            "chapters"   — list[str], story divided into chapters, each 2-4 sentences
+            "word_count" — int, total word count across all chapters
 
     Example input:
         parent_prompt = "Write a story about a girl who loves math and finds a magic door."
 
     Example output:
         {
-            "content": "Yousef climbed the steep path toward the old stone gate...",
+            "chapters": [
+                "Mira had always loved numbers more than anything...",
+                "Behind the door she found a room filled with glowing symbols...",
+            ],
             "word_count": 312
         }
     """
@@ -111,10 +135,13 @@ def generate_story(parent_prompt: str) -> dict:
     if text_block is None:
         raise ValueError("Claude returned no text content")
 
-    # str — the generated story with leading and trailing whitespace removed
+    # str — full raw story text with leading and trailing whitespace removed
     content = text_block.text.strip()
 
-    # int — word count of the generated story for the backend team's records
-    word_count = len(content.split())
+    # list[str] — story split into individual chapter strings, labels stripped
+    chapters = _parse_chapters(content)
 
-    return {"content": content, "word_count": word_count}
+    # int — total word count across all chapter texts, labels excluded
+    word_count = sum(len(ch.split()) for ch in chapters)
+
+    return {"chapters": chapters, "word_count": word_count}

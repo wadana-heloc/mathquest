@@ -41,15 +41,15 @@ export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // ── Not logged in ─────────────────────────────────────────────────────────
+  const PUBLIC_PATHS = ["/", "/login", "/signup", "/terms"];
+
   if (!user) {
-    // Block access to protected routes
-    if (
-      pathname.startsWith("/game") ||
-      pathname.startsWith("/parent/dashboard")
-    ) {
+    const isPublic = PUBLIC_PATHS.some(
+      (p) => pathname === p || (p !== "/" && pathname.startsWith(p + "/"))
+    );
+    if (!isPublic) {
       return NextResponse.redirect(new URL("/login", request.url));
     }
-    // Public routes pass through freely
     return supabaseResponse;
   }
 

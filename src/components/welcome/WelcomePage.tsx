@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
+import { useUser } from "@/lib/hooks/useUser";
 
 const MathParticles = dynamic(
   () => import("@/components/phaser/MathParticles"),
@@ -193,6 +194,13 @@ export default function WelcomePage() {
   const [statsVisible, setStatsVisible] = useState(false);
   const statsRef = useRef<HTMLDivElement>(null);
 
+  const { user, loading: userLoading } = useUser();
+  const userName: string = user?.user_metadata?.display_name
+    ?? user?.email?.split("@")[0]
+    ?? "Wanderer";
+  const userRole: string = user?.user_metadata?.role ?? "child";
+  const gameHref = userRole === "parent" ? "/parent/dashboard" : "/game";
+
   // Staggered entrance
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 100);
@@ -297,7 +305,7 @@ export default function WelcomePage() {
 
           {/* Top nav bar */}
           <nav
-            className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-5 md:px-10 py-4"
+            className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-5 md:px-10 py-3"//py-4
             style={{
               background: "rgba(13,13,31,0.8)",
               backdropFilter: "blur(12px)",
@@ -314,19 +322,37 @@ export default function WelcomePage() {
               </span>
             </div>
             <div className="flex items-center gap-3">
-              <Link
-                href="/login"
-                className="text-white/50 hover:text-white text-sm font-body transition-colors px-3 py-1.5"
-              >
-                Login
-              </Link>
-              <Link
-                href="/signup"
-                className="text-primary font-display font-bold text-sm px-4 py-2 rounded-md transition-all duration-200 hover:opacity-90 hover:-translate-y-px"
-                style={{ background: "#E8B84B" }}
-              >
-                Play Free
-              </Link>
+              {!userLoading && user ? (
+                <>
+                  <span className="text-white/50 text-sm font-body hidden sm:inline">
+                    Welcome,{" "}
+                    <span className="text-gold font-bold">{userName}</span>
+                  </span>
+                  <Link
+                    href={gameHref}
+                    className="text-primary font-display font-bold text-sm px-4 py-2 rounded-md transition-all duration-200 hover:opacity-90 hover:-translate-y-px"
+                    style={{ background: "#E8B84B" }}
+                  >
+                    {userRole === "parent" ? "Dashboard →" : "Continue Quest →"}
+                  </Link>
+                </>
+              ) : (
+                <>
+                  <Link
+                    href="/login"
+                    className="text-white/50 hover:text-white text-sm font-body transition-colors px-3 py-1.5"
+                  >
+                    Login
+                  </Link>
+                  <Link
+                    href="/signup"
+                    className="text-primary font-display font-bold text-sm px-4 py-2 rounded-md transition-all duration-200 hover:opacity-90 hover:-translate-y-px"
+                    style={{ background: "#E8B84B" }}
+                  >
+                    Play Free
+                  </Link>
+                </>
+              )}
             </div>
           </nav>
 
@@ -426,29 +452,46 @@ export default function WelcomePage() {
               transition: "all 0.7s ease-out 0.8s",
             }}
           >
-            {/* Primary CTA */}
-            <Link
-              href="/signup"
-              className="relative flex items-center gap-3 px-8 py-4 rounded-xl font-display font-black text-primary text-lg transition-all duration-200 hover:-translate-y-1 group"
-              style={{
-                background: "#E8B84B",
-                animation: "pulseRing 2.5s ease-in-out infinite",
-                minWidth: "220px",
-                justifyContent: "center",
-              }}
-            >
-              <span>Begin Your Quest</span>
-              <span className="text-primary/60 group-hover:translate-x-1 transition-transform duration-200">→</span>
-            </Link>
-
-            {/* Secondary CTA */}
-            <Link
-              href="/login"
-              className="flex items-center gap-2 px-8 py-4 rounded-xl font-display font-semibold text-white/70 text-base border border-white/10 hover:border-white/30 hover:text-white transition-all duration-200 hover:-translate-y-px"
-              style={{ background: "rgba(255,255,255,0.04)", minWidth: "180px", justifyContent: "center" }}
-            >
-              <span>I have an account</span>
-            </Link>
+            {!userLoading && user ? (
+              /* ── Logged-in: single "continue" CTA ── */
+              <Link
+                href={gameHref}
+                className="relative flex items-center gap-3 px-8 py-4 rounded-xl font-display font-black text-primary text-lg transition-all duration-200 hover:-translate-y-1 group"
+                style={{
+                  background: "#E8B84B",
+                  animation: "pulseRing 2.5s ease-in-out infinite",
+                  minWidth: "260px",
+                  justifyContent: "center",
+                }}
+              >
+                <span>{userRole === "parent" ? "Go to Dashboard" : "Continue Your Quest"}</span>
+                <span className="text-primary/60 group-hover:translate-x-1 transition-transform duration-200">→</span>
+              </Link>
+            ) : (
+              /* ── Guest: original sign-up / login CTAs ── */
+              <>
+                <Link
+                  href="/signup"
+                  className="relative flex items-center gap-3 px-8 py-4 rounded-xl font-display font-black text-primary text-lg transition-all duration-200 hover:-translate-y-1 group"
+                  style={{
+                    background: "#E8B84B",
+                    animation: "pulseRing 2.5s ease-in-out infinite",
+                    minWidth: "220px",
+                    justifyContent: "center",
+                  }}
+                >
+                  <span>Begin Your Quest</span>
+                  <span className="text-primary/60 group-hover:translate-x-1 transition-transform duration-200">→</span>
+                </Link>
+                <Link
+                  href="/login"
+                  className="flex items-center gap-2 px-8 py-4 rounded-xl font-display font-semibold text-white/70 text-base border border-white/10 hover:border-white/30 hover:text-white transition-all duration-200 hover:-translate-y-px"
+                  style={{ background: "rgba(255,255,255,0.04)", minWidth: "180px", justifyContent: "center" }}
+                >
+                  <span>I have an account</span>
+                </Link>
+              </>
+            )}
           </div>
 
           {/* Scroll hint */}

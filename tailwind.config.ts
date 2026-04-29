@@ -205,6 +205,28 @@ const config: Config = {
           "0%":   { opacity: "0", transform: "translateY(24px)" },
           "100%": { opacity: "1", transform: "translateY(0px)" },
         },
+        // ── Game components ─────────────────────────────────────────────
+        // Wrong answer card shake
+        shake: {
+          '0%':   { transform: 'translateX(0)' },
+          '15%':  { transform: 'translateX(-7px)' },
+          '30%':  { transform: 'translateX(7px)' },
+          '45%':  { transform: 'translateX(-5px)' },
+          '60%':  { transform: 'translateX(5px)' },
+          '75%':  { transform: 'translateX(-2px)' },
+          '100%': { transform: 'translateX(0)' },
+        },
+        // Submit button light sweep
+        shine: {
+          '0%':   { transform: 'translateX(-100%)' },
+          '60%':  { transform: 'translateX(200%)' },
+          '100%': { transform: 'translateX(200%)' },
+        },
+        // Hint box slide-in
+        fadeSlideDown: {
+          '0%':   { opacity: '0', transform: 'translateY(-6px)' },
+          '100%': { opacity: '1', transform: 'translateY(0)' },
+        },
       },
       animation: {
         // Auth
@@ -224,6 +246,10 @@ const config: Config = {
         "ticker":        "ticker 18s linear infinite",
         "spin-slow":     "spin-slow 20s linear infinite",
         "fade-slide-up": "fade-slide-up 0.5s ease-out both",
+        // Game components
+       shake:         'shake 0.45s ease',
+        shine:         'shine 2.5s ease infinite',
+        fadeSlideDown: 'fadeSlideDown 0.3s ease',
       },
     },
   },

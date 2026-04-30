@@ -106,6 +106,19 @@ class ParentSettings(BaseModel):
     updated_at: datetime
 
 
+class StreakUpdateRequest(BaseModel):
+    """Body for ``PATCH /child/streak``."""
+
+    correct: bool
+
+
+class StreakResponse(BaseModel):
+    """Streak state returned by GET and PATCH /child/streak."""
+
+    streak_current: int
+    streak_best: int
+
+
 class ParentSettingsUpdate(BaseModel):
     """Partial-update payload for ``PATCH /parent/settings``.
 

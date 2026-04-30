@@ -36,7 +36,7 @@ backend/
 │   ├── supabase_clients.py # admin & anon client factories
 │   ├── routes/
 │   │   ├── auth.py         # /auth/signup, /auth/login, /auth/logout, /auth/me
-│   │   ├── child.py        # /child/me
+│   │   ├── child.py        # /child/me, /child/streak
 │   │   ├── parent.py       # /parent/children, /parent/settings
 │   │   └── problems.py     # /problems, /problems/attempt, /problems/hint
 │   ├── schemas/
@@ -129,11 +129,13 @@ Full flow diagrams: [../docs/auth-flow.md](../docs/auth-flow.md).
 
 ## /child endpoints
 
-`GET /child/me` requires a **child** bearer token. A parent token gets `403 forbidden_role`.
+All `/child/*` endpoints require a **child** bearer token. A parent token gets `403 forbidden_role`.
 
-| Method + path   | Auth  | Purpose |
-| --------------- | ----- | ------- |
-| `GET /child/me` | child | Return the caller's combined `ChildProfile` (merges `public.users` + `public.children`). |
+| Method + path         | Auth  | Purpose |
+| --------------------- | ----- | ------- |
+| `GET /child/me`       | child | Return the caller's combined `ChildProfile` (merges `public.users` + `public.children`). |
+| `GET /child/streak`   | child | Return `{ streak_current, streak_best }` — lightweight read without fetching the full profile. |
+| `PATCH /child/streak` | child | Body `{ correct: bool }`. Increments `streak_current` (and promotes `streak_best`) when `correct=true`; resets `streak_current` to 0 when `correct=false`. Returns `{ streak_current, streak_best }`. Uses SELECT-after-UPDATE. |
 
 ## /problems endpoints
 

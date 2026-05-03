@@ -16,7 +16,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ProblemCard } from '@/components/game/ProblemCard'
-import { fetchProblems } from '@/lib/game/actions'
+import { fetchProblems, updateStreak, advanceZone } from '@/lib/game/actions'
 import type { Problem, AttemptResult, HintResult } from '@/types/game'
 import { ZONE1_EVENTS } from '@/lib/phaser/Zone1Scene'
 import { useChildProfile } from '@/lib/hooks/useChildProfile'
@@ -195,7 +195,7 @@ function ObstacleBadge({ label, type }: { label: string; type: 'obstacle' | 'bos
 function MathModal({
   trigger, problem, coins, streak,
   onCorrect, onInsight, onHintUsed,
-  onCorrectClose, onWrongClose,
+  onCorrectClose, onWrongClose, onWrong,
 }: {
   trigger: ProblemTrigger
   problem: Problem
@@ -206,6 +206,7 @@ function MathModal({
   onHintUsed: (r: HintResult) => void
   onCorrectClose: () => void
   onWrongClose: () => void
+  onWrong: () => void
 }) {
   return (
     <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
@@ -234,6 +235,7 @@ function MathModal({
           onInsight={onInsight}
           onHintUsed={onHintUsed}
           onNextProblem={onCorrectClose}
+          onWrong={onWrong}
         />
 
         <p className="text-center text-white/30 text-xs mt-3">
@@ -248,7 +250,7 @@ function MathModal({
 //  Zone complete
 // ─────────────────────────────────────────────────────────────
 
-function ZoneCompleteScreen({ onNext }: { onNext: () => void }) {
+function ZoneCompleteScreen({ onNext, onHub, sessionCoins }: { onNext: () => void; onHub: () => void; sessionCoins: number }) {
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md">
       <div className="text-center px-8" style={{ animation: 'zoomIn 0.5s ease forwards' }}>
@@ -258,7 +260,7 @@ function ZoneCompleteScreen({ onNext }: { onNext: () => void }) {
         <p className="text-white/50 text-base mb-10">You defeated the Tidal Sentinel and solved all 8 obstacles!</p>
         <div className="flex justify-center gap-5 mb-10">
           {[
-            { icon: '🪙', label: '+360 coins', color: 'border-yellow-500/40 bg-yellow-950/60' },
+            { icon: '🪙', label: `+${sessionCoins} coins`, color: 'border-yellow-500/40 bg-yellow-950/60' },
             { icon: '🧩', label: 'Zone Badge', color: 'border-teal-500/40 bg-teal-950/60' },
             { icon: '📖', label: 'Story Ch. 1', color: 'border-violet-500/40 bg-violet-950/60' },
           ].map(r => (
@@ -268,11 +270,20 @@ function ZoneCompleteScreen({ onNext }: { onNext: () => void }) {
             </div>
           ))}
         </div>
-        <button
-          onClick={onNext}
-          className="bg-yellow-400 text-[#1A1A2E] font-black text-xl px-12 py-5 rounded-2xl
-                     hover:bg-yellow-300 active:scale-95 transition-all duration-150 shadow-xl shadow-yellow-400/30"
-        >Continue to Zone 2 →</button>
+        <div className="flex flex-col items-center gap-3">
+          <button
+            type="button"
+            onClick={onNext}
+            className="bg-yellow-400 text-[#1A1A2E] font-black text-xl px-12 py-5 rounded-2xl
+                       hover:bg-yellow-300 active:scale-95 transition-all duration-150 shadow-xl shadow-yellow-400/30"
+          >Continue to Zone 2 →</button>
+          <button
+            type="button"
+            onClick={onHub}
+            className="bg-white/10 hover:bg-white/20 text-white/70 hover:text-white font-black text-xl px-12 py-5 rounded-2xl
+                       border border-white/15 hover:border-white/30 active:scale-95 transition-all duration-150"
+          >← Back to Hub</button>
+        </div>
       </div>
     </div>
   )
@@ -292,6 +303,10 @@ export default function Zone1Game() {
   // Reset in dismissModal() — after the modal is fully gone — so the
   // next problem always starts with a clean slate.
   const answerDispatchedRef = useRef(false)
+  // Obstacle IDs that received at least one wrong answer. Persists across
+  // modal open/close so returning to an obstacle and answering correctly
+  // still counts as a broken streak.
+  const wrongObstaclesRef = useRef<Set<string>>(new Set())
 
   const { profile } = useChildProfile()
   const router = useRouter()
@@ -378,13 +393,17 @@ export default function Zone1Game() {
         }
         setTimeout(() => tryOpen(retriesLeft - 1), 300)
       }
+      // Problems should be loaded by the time the player hits the first obstacle, but if not, retry a few times before giving up and unblocking Phaser.
       tryOpen(6)
     }
 
     const onProgress = (e: Event) => { const d = (e as CustomEvent).detail; setProgress({ solved: d.solved, total: d.total }) }
     const onBossPhase = (e: Event) => { const d = (e as CustomEvent).detail; setBossPhase(d.phase); setBossVisible(true) }
-    const onZoneComplete = () => setZoneComplete(true)
-
+    const onZoneComplete = () => {
+      setZoneComplete(true)
+      advanceZone(1).catch(() => {})
+    }
+    // Note: Phaser events are emitted on window, so we listen there rather than on a React ref.
     window.addEventListener(ZONE1_EVENTS.SHOW_PROBLEM, onShowProblem)
     // window.addEventListener(ZONE1_EVENTS.PROGRESS,      onProgress)
     window.addEventListener(ZONE1_EVENTS.BOSS_PHASE, onBossPhase)
@@ -407,11 +426,16 @@ export default function Zone1Game() {
 
   // ── Dismiss modal — ALWAYS resets the dedup flag ──────────
   const dismissModal = useCallback(() => {
-    // Reset dedup ref HERE (after modal closes) not in onShowProblem
-    // (before next modal opens). This is the critical timing fix.
     answerDispatchedRef.current = false
+    // wrongObstaclesRef intentionally NOT cleared — must persist across reopens
     setActiveTrigger(null)
     setActiveProblem(null)
+  }, [])
+
+  // ── Wrong attempt inside the modal ───────────────────────
+  const handleWrong = useCallback(() => {
+    const id = activeTriggerRef.current?.obstacleId
+    if (id) wrongObstaclesRef.current.add(id)
   }, [])
 
   // ── Correct answer ────────────────────────────────────────
@@ -420,12 +444,13 @@ export default function Zone1Game() {
     if (!trigger) return
     setCoins(result.new_coin_balance)
     setSessionCoins(s => s + result.coins_delta)
-    setStreak(s => s + 1)
-    // setProgress(prev => ({
-    //   ...prev,
-    //   solved: prev.solved + 1
-    // }))
-
+    if (wrongObstaclesRef.current.has(trigger.obstacleId)) {
+      setStreak(0)
+      updateStreak(false).catch(() => {})
+    } else {
+      setStreak(s => s + 1)
+      updateStreak(true).catch(() => {})
+    }
     setProgress(prev => {
       if (prev.solved >= prev.total) return prev
       return { ...prev, solved: prev.solved + 1 }
@@ -453,6 +478,11 @@ export default function Zone1Game() {
   const handleWrongClose = useCallback(() => {
     const trigger = activeTriggerRef.current
     if (trigger) sendAnswer(false, trigger.obstacleId)
+    const id = trigger?.obstacleId
+    if (id && wrongObstaclesRef.current.has(id)) {
+      setStreak(0)
+      updateStreak(false).catch(() => {})
+    }
     dismissModal()
   }, [sendAnswer, dismissModal])
 
@@ -492,11 +522,16 @@ export default function Zone1Game() {
           onHintUsed={handleHintUsed}
           onCorrectClose={handleCorrectClose}
           onWrongClose={handleWrongClose}
+          onWrong={handleWrong}
         />
       )}
 
       {zoneComplete && (
-        <ZoneCompleteScreen onNext={() => { window.location.href = '/game/zone/2' }} />
+        <ZoneCompleteScreen
+          onNext={() => { window.location.href = '/game/zone/2' }}
+          onHub={() => router.push('/game')}
+          sessionCoins={sessionCoins}
+        />
       )}
     </div>
   )

@@ -5,7 +5,35 @@ import { createAdminClient } from '@/lib/supabase/admin'
 import type { Problem, AttemptResult, HintResult, Zone, ProblemCategory, TrickId, Hint } from '@/types/game'
 
 const lastAttemptTime = new Map<string, number>()
-const RATE_LIMIT_MS = 3000
+// src/lib/supabase/client.ts
+// ─────────────────────────────────────────────────────────────────────────────
+// BROWSER SUPABASE CLIENT
+// Use this in Client Components ("use client") and event handlers.
+// Creates one instance per browser tab (singleton pattern).
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { createBrowserClient } from "@supabase/ssr";
+
+export function createClient() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}// src/lib/supabase/client.ts
+// ─────────────────────────────────────────────────────────────────────────────
+// BROWSER SUPABASE CLIENT
+// Use this in Client Components ("use client") and event handlers.
+// Creates one instance per browser tab (singleton pattern).
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { createBrowserClient } from "@supabase/ssr";
+
+export function createClient() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}const RATE_LIMIT_MS = 3000
 
 // ─── Phaser ID helpers ────────────────────────────────────────────────────────
 
@@ -188,7 +216,68 @@ export async function submitAnswer(payload: {
   }
 }
 
-// ─── 3. Request a hint ────────────────────────────────────────────────────────
+// ─── 3. Advance current zone ──────────────────────────────────────────────────
+
+export async function advanceZone(completedZone: number): Promise<void> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+
+  const admin = createAdminClient()
+  const { data: child } = await admin
+    .from('children')
+    .select('id, current_zone')
+    .eq('user_id', user.id)
+    .single()
+
+  if (!child) throw new Error('Child profile not found')
+
+  const current = (child as { id: string; current_zone: number }).current_zone
+  // Only advance if the DB zone hasn't already been updated past this zone
+  if (current <= completedZone) {
+    await admin
+      .from('children')
+      .update({ current_zone: completedZone + 1 })
+      .eq('id', (child as { id: string; current_zone: number }).id)
+  }
+}
+
+// ─── 4. Update streak ─────────────────────────────────────────────────────────
+// Increments streak on correct answer, resets to 0 on wrong answer.
+// Returns the new streak values after the DB write.
+
+export async function updateStreak(
+  correct: boolean,
+): Promise<{ streak_current: number; streak_best: number }> {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) throw new Error('Not authenticated')
+
+  const admin = createAdminClient()
+  const { data: child } = await admin
+    .from('children')
+    .select('id, streak_current, streak_best')
+    .eq('user_id', user.id)
+    .single()
+
+  if (!child) throw new Error('Child profile not found')
+
+  const cur  = (child as { id: string; streak_current: number; streak_best: number }).streak_current
+  const best = (child as { id: string; streak_current: number; streak_best: number }).streak_best
+  const id   = (child as { id: string; streak_current: number; streak_best: number }).id
+
+  const newCurrent = correct ? cur + 1 : 0
+  const newBest    = correct ? Math.max(best, newCurrent) : best
+
+  await admin
+    .from('children')
+    .update({ streak_current: newCurrent, streak_best: newBest })
+    .eq('id', id)
+
+  return { streak_current: newCurrent, streak_best: newBest }
+}
+
+// ─── 4. Request a hint ────────────────────────────────────────────────────────
 // Free hints (level 1) cost 0 coins. Paid hints deduct immediately from DB.
 
 export async function requestHint(payload: {

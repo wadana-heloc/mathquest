@@ -307,6 +307,7 @@ export interface ProblemCardProps {
   onInsight: (result: AttemptResult) => void
   onHintUsed: (result: HintResult, level: 1 | 2 | 3) => void
   onNextProblem: () => void
+  onWrong?: () => void
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -321,6 +322,7 @@ export function ProblemCard({
   onInsight,
   onHintUsed,
   onNextProblem,
+  onWrong,
 }: ProblemCardProps) {
   // ── Local state ────────────────────────────────────────────
   const [cardState, setCardState] = useState<CardState>('idle')
@@ -445,6 +447,7 @@ export function ProblemCard({
           const newWrong = wrongCount + 1
           setWrongCount(newWrong)
           setHintVisible(true)
+          onWrong?.()
 
           if (newWrong >= WRONG_COOLDOWN_THRESHOLD) {
             startCooldown()

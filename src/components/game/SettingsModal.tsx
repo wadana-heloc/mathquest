@@ -110,7 +110,7 @@ export function SettingsModal({
           <div>
             <label
               htmlFor="settings-name"
-              className="block text-xs font-bold text-violet-500 uppercase tracking-wider mb-1.5"
+              className="block text-xs font-bold text-yellow-500 uppercase tracking-wider mb-1.5"
             >
               Your Name ✏️
             </label>
@@ -128,7 +128,7 @@ export function SettingsModal({
           <div>
             <label
               htmlFor="settings-dob"
-              className="block text-xs font-bold text-violet-500 uppercase tracking-wider mb-1.5"
+              className="block text-xs font-bold text-yellow-500 uppercase tracking-wider mb-1.5"
             >
               Birthday 🎂
             </label>

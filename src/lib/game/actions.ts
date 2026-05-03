@@ -2,38 +2,12 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+
 import type { Problem, AttemptResult, HintResult, Zone, ProblemCategory, TrickId, Hint } from '@/types/game'
 
 const lastAttemptTime = new Map<string, number>()
-// src/lib/supabase/client.ts
-// ─────────────────────────────────────────────────────────────────────────────
-// BROWSER SUPABASE CLIENT
-// Use this in Client Components ("use client") and event handlers.
-// Creates one instance per browser tab (singleton pattern).
-// ─────────────────────────────────────────────────────────────────────────────
 
-import { createBrowserClient } from "@supabase/ssr";
-
-export function createClient() {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-}// src/lib/supabase/client.ts
-// ─────────────────────────────────────────────────────────────────────────────
-// BROWSER SUPABASE CLIENT
-// Use this in Client Components ("use client") and event handlers.
-// Creates one instance per browser tab (singleton pattern).
-// ─────────────────────────────────────────────────────────────────────────────
-
-import { createBrowserClient } from "@supabase/ssr";
-
-export function createClient() {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-}const RATE_LIMIT_MS = 3000
+const RATE_LIMIT_MS = 3000
 
 // ─── Phaser ID helpers ────────────────────────────────────────────────────────
 

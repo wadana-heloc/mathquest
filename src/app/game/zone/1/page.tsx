@@ -4,9 +4,12 @@
 
 import dynamic from 'next/dynamic'
 
+
+// Placeholder loading component with ocean theme
 const Zone1Game = dynamic(
   () => import('@/components/game/Zone1Game'),
   {
+    // Disable SSR for this component since Phaser relies on browser APIs 
     ssr: false,
     loading: () => (
       <div className="w-screen h-screen bg-[#1a6ec7] flex items-center justify-center">

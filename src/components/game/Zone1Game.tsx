@@ -21,6 +21,7 @@ import type { Problem, AttemptResult, HintResult } from '@/types/game'
 import { ZONE1_EVENTS } from '@/lib/phaser/Zone1Scene'
 import { useChildProfile } from '@/lib/hooks/useChildProfile'
 
+//
 interface ProblemTrigger {
   type: 'obstacle' | 'boss'
   obstacleId: string
@@ -46,7 +47,14 @@ function TouchControls({ visible }: { visible: boolean }) {
   const stopLeft = () => { const s = getScene(); if (s) s.touchLeft = false }
   const startRight = () => { const s = getScene(); if (s) s.touchRight = true }
   const stopRight = () => { const s = getScene(); if (s) s.touchRight = false }
-  const doJump = () => { const s = getScene(); if (s) s.touchJump = true }
+  // const doJump = () => { const s = getScene(); if (s) s.touchJump = true }
+  const doJump = () => {
+  const s = getScene()
+  if (s) {
+    s.touchJump = true
+    setTimeout(() => (s.touchJump = false), 100)
+  }
+}
 
   const btn = 'flex items-center justify-center rounded-2xl select-none transition-transform duration-75 active:scale-90'
 
@@ -54,12 +62,14 @@ function TouchControls({ visible }: { visible: boolean }) {
     <div className="absolute bottom-6 left-0 right-0 z-30 flex items-end justify-between px-6 pointer-events-none">
       <div className="flex gap-3 pointer-events-auto">
         <button
+        type="button"
           className={`${btn} w-20 h-20 bg-white/20 backdrop-blur-sm border-2 border-white/30 text-white text-3xl shadow-lg`}
           onTouchStart={e => { prevent(e); startLeft() }} onTouchEnd={e => { prevent(e); stopLeft() }} onTouchCancel={e => { prevent(e); stopLeft() }}
           onMouseDown={startLeft} onMouseUp={stopLeft} onMouseLeave={stopLeft}
           aria-label="Move left"
         >◀</button>
         <button
+          type="button"
           className={`${btn} w-20 h-20 bg-white/20 backdrop-blur-sm border-2 border-white/30 text-white text-3xl shadow-lg`}
           onTouchStart={e => { prevent(e); startRight() }} onTouchEnd={e => { prevent(e); stopRight() }} onTouchCancel={e => { prevent(e); stopRight() }}
           onMouseDown={startRight} onMouseUp={stopRight} onMouseLeave={stopRight}
@@ -68,6 +78,7 @@ function TouchControls({ visible }: { visible: boolean }) {
       </div>
       <div className="pointer-events-auto">
         <button
+          type="button"
           className={`${btn} w-24 h-24 bg-yellow-400/80 backdrop-blur-sm border-2 border-yellow-300 text-[#1A1A2E] text-4xl shadow-xl shadow-yellow-400/30`}
           onTouchStart={e => { prevent(e); doJump() }} onMouseDown={doJump}
           aria-label="Jump"
@@ -260,7 +271,7 @@ function ZoneCompleteScreen({ onNext, onHub, sessionCoins }: { onNext: () => voi
         <p className="text-white/50 text-base mb-10">You defeated the Tidal Sentinel and solved all 8 obstacles!</p>
         <div className="flex justify-center gap-5 mb-10">
           {[
-            { icon: '🪙', label: `+${sessionCoins} coins`, color: 'border-yellow-500/40 bg-yellow-950/60' },
+            { icon: '🪙', label: `+${sessionCoins} coins earned`, color: 'border-yellow-500/40 bg-yellow-950/60' },
             { icon: '🧩', label: 'Zone Badge', color: 'border-teal-500/40 bg-teal-950/60' },
             { icon: '📖', label: 'Story Ch. 1', color: 'border-violet-500/40 bg-violet-950/60' },
           ].map(r => (
@@ -294,24 +305,37 @@ function ZoneCompleteScreen({ onNext, onHub, sessionCoins }: { onNext: () => voi
 // ─────────────────────────────────────────────────────────────
 
 export default function Zone1Game() {
-  const canvasRef = useRef<HTMLDivElement>(null)
-  const gameRef = useRef<import('phaser').Game | null>(null)
 
+  // Refs for Phaser integration and game state that doesn't need to trigger React re-renders
+  const canvasRef = useRef<HTMLDivElement>(null)// Ref to Phaser game instance so we can call methods on it without causing re-renders
+  const gameRef = useRef<import('phaser').Game | null>(null)// Ref to currently active problem trigger (obstacle or boss) so we can access it inside event handlers without stale closures
+
+  //save the last active trigger that opened a modal, so we can send the answer result back to the correct obstacle even if the player moves around or triggers something else in the meantime. This is necessary because Phaser doesn't pause the game when the modal is open, so the player could potentially trigger another problem before answering the first one.
   const activeTriggerRef = useRef<ProblemTrigger | null>(null)
+
+  // Store problems in a ref since they don't change after loading and we want to avoid re-renders when setting them.
   const problemsRef = useRef<Map<string, Problem>>(new Map())
+
   // Prevents sending two ANSWER_RESULT events for the same modal open.
   // Reset in dismissModal() — after the modal is fully gone — so the
   // next problem always starts with a clean slate.
   const answerDispatchedRef = useRef(false)
+
   // Obstacle IDs that received at least one wrong answer. Persists across
   // modal open/close so returning to an obstacle and answering correctly
   // still counts as a broken streak.
+  //save the IDs of obstacles that the player has attempted and gotten wrong, so we can show a warning if they try to answer it again and prevent them from getting coins for it until they get it right. This encourages players to learn from their mistakes rather than just spamming answers, while still allowing them to eventually earn coins for previously failed obstacles if they keep trying.
   const wrongObstaclesRef = useRef<Set<string>>(new Set())
 
+  // Get profile for coins, streak, etc.
   const { profile } = useChildProfile()
-  const router = useRouter()
 
+  const router = useRouter()
+// React state for things that affect rendering
+
+// Active trigger and problem for the currently open modal. Null if no modal is open.
   const [activeTrigger, setActiveTrigger] = useState<ProblemTrigger | null>(null)
+// Active problem is stored in React state since it directly controls whether the modal is shown and what content it has.
   const [activeProblem, setActiveProblem] = useState<Problem | null>(null)
   const [coins, setCoins] = useState(0)
   const [sessionCoins, setSessionCoins] = useState(0)
@@ -324,10 +348,14 @@ export default function Zone1Game() {
       setStreak(profile.streak)
     }
   }, [profile])
+  
   const [progress, setProgress] = useState({ solved: 0, total: 8 })
+  
   const [bossPhase, setBossPhase] = useState(0)
+// Boss becomes visible at phase 1, but we don't want to show the HUD until we get that event from Phaser to avoid spoilers.
   const [bossVisible, setBossVisible] = useState(false)
   const [zoneComplete, setZoneComplete] = useState(false)
+  // Show touch controls if on a mobile device
   const [showControls, setShowControls] = useState(false)
 
   activeTriggerRef.current = activeTrigger
@@ -350,10 +378,13 @@ export default function Zone1Game() {
 
   // ── Boot Phaser ───────────────────────────────────────────
   useEffect(() => {
+    //
     if (!canvasRef.current || gameRef.current) return
     const boot = async () => {
+      // Dynamically import Phaser and the scene to reduce initial bundle size and load Phaser only when this component is mounted.
       const Phaser = (await import('phaser')).default
       const { Zone1Scene } = await import('@/lib/phaser/Zone1Scene')
+      // Create the Phaser game instance and store it in a ref so we can call methods on it later without causing re-renders.
       gameRef.current = new Phaser.Game({
         type: Phaser.AUTO,
         width: window.innerWidth,
@@ -367,6 +398,7 @@ export default function Zone1Game() {
       })
     }
     boot()
+        // Clean up Phaser instance on unmount to free resources and avoid potential memory leaks or lingering event listeners.
     return () => { gameRef.current?.destroy(true); gameRef.current = null }
   }, [])
 
@@ -385,12 +417,14 @@ export default function Zone1Game() {
           setActiveProblem(problem)
           return
         }
+        // If the problem isn't loaded yet, wait a bit and retry. This can happen if the player hits an obstacle before the fetchProblems call completes. We want to handle this gracefully rather than just showing a blank modal or breaking the game.
         if (retriesLeft <= 0) {
           console.error('[Zone1] Problem not found:', data.problemId, '| loaded:', Array.from(problemsRef.current.keys()))
           // Unblock Phaser so the game doesn't freeze
           dispatchToPhaser(ZONE1_EVENTS.ANSWER_RESULT, { correct: false, obstacleId: data.obstacleId })
           return
         }
+        
         setTimeout(() => tryOpen(retriesLeft - 1), 300)
       }
       // Problems should be loaded by the time the player hits the first obstacle, but if not, retry a few times before giving up and unblocking Phaser.
@@ -404,14 +438,18 @@ export default function Zone1Game() {
       advanceZone(1).catch(() => {})
     }
     // Note: Phaser events are emitted on window, so we listen there rather than on a React ref.
+    
     window.addEventListener(ZONE1_EVENTS.SHOW_PROBLEM, onShowProblem)
     // window.addEventListener(ZONE1_EVENTS.PROGRESS,      onProgress)
+    
     window.addEventListener(ZONE1_EVENTS.BOSS_PHASE, onBossPhase)
     window.addEventListener(ZONE1_EVENTS.ZONE_COMPLETE, onZoneComplete)
     return () => {
       window.removeEventListener(ZONE1_EVENTS.SHOW_PROBLEM, onShowProblem)
       // window.removeEventListener(ZONE1_EVENTS.PROGRESS,      onProgress)
+      // Note: we intentionally do NOT remove the SHOW_PROBLEM listener on unmount because if the player navigates away from this page and then back, we want it to still work without having to re-mount the entire Phaser game. The other listeners can be cleaned up since they only affect UI elements that won't be present when the player returns.
       window.removeEventListener(ZONE1_EVENTS.BOSS_PHASE, onBossPhase)
+      //
       window.removeEventListener(ZONE1_EVENTS.ZONE_COMPLETE, onZoneComplete)
     }
   }, [])
@@ -421,6 +459,7 @@ export default function Zone1Game() {
     if (answerDispatchedRef.current) return   // already sent for this modal
     answerDispatchedRef.current = true
     console.log('[Zone1] sendAnswer:', { correct, obstacleId })
+    // Send the result back to Phaser so it can update the game state (e.g. remove obstacle, advance boss phase, etc.) based on whether the player's answer was correct or not. We use a custom event for this communication since Phaser and React don't share state and we want to keep them decoupled.
     dispatchToPhaser(ZONE1_EVENTS.ANSWER_RESULT, { correct, obstacleId })
   }, [])
 
@@ -433,15 +472,19 @@ export default function Zone1Game() {
   }, [])
 
   // ── Wrong attempt inside the modal ───────────────────────
+  
   const handleWrong = useCallback(() => {
+    // Mark this obstacle as having a wrong attempt so we can break the streak and show warnings on repeat attempts. We still allow the player to eventually earn coins for it if they keep trying, but this encourages them to learn from their mistakes rather than just spamming answers.
     const id = activeTriggerRef.current?.obstacleId
     if (id) wrongObstaclesRef.current.add(id)
   }, [])
 
   // ── Correct answer ────────────────────────────────────────
   const handleCorrect = useCallback((result: AttemptResult) => {
+    // Update coins and streak based on the result returned from the server. We have to use the ref to get the current active trigger since this function can be called after the player has already triggered another problem, and we want to make sure we send the answer result back to the correct obstacle in Phaser.
     const trigger = activeTriggerRef.current
     if (!trigger) return
+    // Update local state for coins, streak, and progress. The server response includes the new coin balance and how much it changed, so we can update both the total coins and the session coins earned from this play session. We also check if this obstacle had a previous wrong attempt to determine whether to reset the streak or increment it.
     setCoins(result.new_coin_balance)
     setSessionCoins(s => s + result.coins_delta)
     if (wrongObstaclesRef.current.has(trigger.obstacleId)) {
@@ -451,6 +494,7 @@ export default function Zone1Game() {
       setStreak(s => s + 1)
       updateStreak(true).catch(() => {})
     }
+    
     setProgress(prev => {
       if (prev.solved >= prev.total) return prev
       return { ...prev, solved: prev.solved + 1 }
@@ -459,10 +503,12 @@ export default function Zone1Game() {
     dismissModal()
   }, [sendAnswer, dismissModal])
 
+  // ── Insight detected — treat as correct but with a special celebration ──
   const handleInsight = useCallback((result: AttemptResult) => {
     handleCorrect(result)
   }, [handleCorrect])
 
+  // ── Hint used — update coins based on hint cost ───────────
   const handleHintUsed = useCallback((result: HintResult) => {
     setCoins(result.new_coin_balance)
   }, [])
@@ -475,6 +521,7 @@ export default function Zone1Game() {
   }, [dismissModal])
 
   // ── ✕ button pressed ─────────────────────────────────────
+  // The player is choosing to close the modal without a correct answer, so we treat it as a wrong attempt. We still want to send the answer result back to Phaser so it can update the game state accordingly (e.g. keep the obstacle in place, reset boss phase, etc.), and we also want to mark this obstacle as having a wrong attempt to break the streak and show warnings on repeat attempts. Finally, we dismiss the modal.
   const handleWrongClose = useCallback(() => {
     const trigger = activeTriggerRef.current
     if (trigger) sendAnswer(false, trigger.obstacleId)

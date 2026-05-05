@@ -79,6 +79,10 @@ ADVANCEMENT_WINDOW = 10
 # before the engine will advance. Prevents moving up after a single lucky solve.
 MIN_PROBLEMS_PER_LEVEL = 5
 
+# int — maximum practice problems allowed on one trick before the child is moved
+# on regardless of mastery. Prevents the child grinding the same trick endlessly.
+MAX_PROBLEMS_PER_TRICK = 7
+
 
 # ---------------------------------------------------------------------------
 # Session-level adjustment thresholds (PRD Section 09)
@@ -107,3 +111,41 @@ ADVANCE_DURATION_THRESHOLD_MS = 25000
 
 # int — maximum number of recent problems included in the Agent 1 prompt
 RECENT_PROBLEMS_CAP = 5
+
+
+# ---------------------------------------------------------------------------
+# Problem bank and recommender settings
+# Used by problem_recommender.py to decide when to trigger a refill and to
+# check phase transitions. Never hardcode these in the module files.
+# ---------------------------------------------------------------------------
+
+# int — minimum unseen problems remaining before triggering a refill request
+MIN_BANK_SIZE = 5
+
+# int — number of discovery-phase problems before trick reveal is triggered
+DISCOVERY_PROBLEMS_REQUIRED = 2
+
+# int — number of practice problems required before mastery can be checked
+MIN_PRACTICE_PROBLEMS = 10
+
+# float — correct rate threshold to declare mastery and advance trick
+MASTERY_THRESHOLD = 0.80
+
+
+# ---------------------------------------------------------------------------
+# Scoring weights for problem_recommender.py
+# The recommender scores each candidate using these weights. Adjust here to
+# change prioritization without touching the module logic.
+# ---------------------------------------------------------------------------
+
+# int — bonus score for a problem the child previously failed (highest value)
+WEIGHT_RETRY = 30
+
+# int — bonus score for a problem the child has never seen
+WEIGHT_UNSEEN = 20
+
+# int — bonus score when the problem's phase tag matches the child's current phase
+WEIGHT_PHASE_FIT = 25
+
+# int — penalty per unit of difficulty mismatch from the child's current level
+WEIGHT_DIFFICULTY_PENALTY = 10

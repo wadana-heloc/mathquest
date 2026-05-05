@@ -26,6 +26,29 @@ from config import (
     AGENT1_MAX_TOKENS,
     AGENT2_MAX_TOKENS,
     RECENT_PROBLEMS_CAP,
+    MIN_BANK_SIZE,
+    DISCOVERY_PROBLEMS_REQUIRED,
+    MIN_PRACTICE_PROBLEMS,
+    MASTERY_THRESHOLD,
+    WEIGHT_RETRY,
+    WEIGHT_UNSEEN,
+    WEIGHT_PHASE_FIT,
+    WEIGHT_DIFFICULTY_PENALTY,
+    MAX_PROBLEMS_PER_TRICK,
+)
+from problem_recommender import (
+    score_candidate,
+    pick_best_problem,
+    check_phase_signal,
+    build_response,
+    recommend,
+)
+from difficulty_adjuster import (
+    compute_difficulty_adjustment,
+    check_mastery,
+    compute_phase_update,
+    build_adjuster_response,
+    process_answer,
 )
 from agent_generator import (
     generate_problem,
@@ -941,16 +964,20 @@ class TestLoadFallback:
         # When a matching file exists it must be loaded and returned.
         # We mock only the terminal path object so exists() and read_text()
         # return controlled values without touching the real filesystem.
-        fallback_data = dict(_MOCK_PROBLEM_FIXTURE)
-        fallback_data["id"] = "fallback_test"
+        # The bank JSON must be nested as {trick_id: {str(difficulty): problem}}.
+        fallback_problem = dict(_MOCK_PROBLEM_FIXTURE)
+        fallback_problem["id"] = "fallback_test"
+        # dict — bank JSON keyed by trick_id → str(difficulty) → problem, matching
+        # the format _load_fallback expects when it calls bank.get(trick_id)
+        bank_json = {"B1": {"3": fallback_problem}}
 
-        # MagicMock — stands in for the resolved fallback_path inside _load_fallback
+        # MagicMock — stands in for the resolved bank_path inside _load_fallback
         mock_fallback_path = MagicMock()
         mock_fallback_path.exists.return_value = True
-        mock_fallback_path.read_text.return_value = json.dumps(fallback_data)
+        mock_fallback_path.read_text.return_value = json.dumps(bank_json)
 
         with patch("orchestrator.Path") as mock_path_cls:
-            # Path(__file__).parent / "fallback_problems" / "B1_d3.json"
+            # Path(__file__).parent / "fallback_problems" / "fallback_bank.json"
             # = mock_path_cls() -> .parent -> / -> / -> mock_fallback_path
             mock_path_cls.return_value.parent.__truediv__.return_value.__truediv__.return_value = mock_fallback_path
 
@@ -1038,3 +1065,754 @@ class TestRunPipeline:
                 result = run_pipeline(make_child_profile_input())
         assert result is not None
         assert isinstance(result, dict)
+
+
+# ---------------------------------------------------------------------------
+# Helpers for recommender / adjuster tests
+# ---------------------------------------------------------------------------
+
+def make_candidate(
+    id="p_001",
+    trick_id="A1",
+    difficulty=4,
+    grade=3,
+    phase_tag="practice",
+    previously_failed=False,
+):
+    # dict — a single candidate problem with sensible defaults
+    return {
+        "id": id,
+        "trick_id": trick_id,
+        "difficulty": difficulty,
+        "grade": grade,
+        "phase_tag": phase_tag,
+        "previously_failed": previously_failed,
+    }
+
+
+def make_recommender_child(
+    current_phase="practice",
+    current_difficulty=4,
+    discovery_problems_seen=0,
+    current_trick="A1",
+):
+    # dict — a child profile for recommender tests
+    return {
+        "id": 42,
+        "age": 8,
+        "grade": 3,
+        "current_zone": 2,
+        "current_difficulty": current_difficulty,
+        "difficulty_ceiling": 10,
+        "current_trick": current_trick,
+        "current_phase": current_phase,
+        "unlocked_tricks": ["A1", "A2"],
+        "discovery_problems_seen": discovery_problems_seen,
+        "session_stats": {
+            "problems_solved_today": 5,
+            "current_streak": 3,
+            "avg_time_per_problem_ms": 4200,
+        },
+    }
+
+
+def make_answer_result(correct=True, hints_used=0, duration_ms=20000, attempts=1):
+    # dict — one answer result for adjuster tests
+    return {
+        "correct": correct,
+        "hints_used": hints_used,
+        "duration_ms": duration_ms,
+        "attempts": attempts,
+    }
+
+
+def make_recent_performance(n=10, correct=True, hints_used=0, duration_ms=3000, difficulty=4):
+    # list[dict] — n identical performance entries for adjuster tests
+    return [
+        {"correct": correct, "hints_used": hints_used, "duration_ms": duration_ms, "difficulty": difficulty}
+        for _ in range(n)
+    ]
+
+
+# ---------------------------------------------------------------------------
+# TestScoreCandidate
+# ---------------------------------------------------------------------------
+
+class TestScoreCandidate:
+
+    def test_phase_match_gives_higher_score_than_mismatch(self):
+        # A candidate whose phase matches the child's phase should score higher
+        child = make_recommender_child(current_phase="practice")
+        match = make_candidate(phase_tag="practice")
+        mismatch = make_candidate(phase_tag="discovery")
+        assert score_candidate(match, child) > score_candidate(mismatch, child)
+
+    def test_previously_failed_gets_higher_score_than_unseen(self):
+        # A retry (previously_failed=True) should outscore a fresh unseen problem
+        child = make_recommender_child()
+        retry = make_candidate(previously_failed=True)
+        unseen = make_candidate(previously_failed=False)
+        assert score_candidate(retry, child) > score_candidate(unseen, child)
+
+    def test_difficulty_delta_penalises_off_target_problems(self):
+        # A problem 2 levels above current_difficulty should score lower than on-target
+        child = make_recommender_child(current_difficulty=4)
+        on_target = make_candidate(difficulty=4)
+        off_target = make_candidate(difficulty=6)
+        assert score_candidate(on_target, child) > score_candidate(off_target, child)
+
+    def test_all_weights_sum_correctly_for_perfect_fit(self):
+        # Perfect fit: unseen, phase matches, difficulty exact → WEIGHT_UNSEEN + WEIGHT_PHASE_FIT
+        child = make_recommender_child(current_phase="practice", current_difficulty=4)
+        perfect = make_candidate(phase_tag="practice", difficulty=4, previously_failed=False)
+        expected = WEIGHT_UNSEEN + WEIGHT_PHASE_FIT
+        assert score_candidate(perfect, child) == expected
+
+    def test_retry_candidate_score_includes_retry_weight(self):
+        # Retry candidate: previously_failed=True, phase match, difficulty exact
+        # Score = WEIGHT_RETRY + WEIGHT_PHASE_FIT (no WEIGHT_UNSEEN because previously_failed)
+        child = make_recommender_child(current_phase="practice", current_difficulty=4)
+        retry = make_candidate(phase_tag="practice", difficulty=4, previously_failed=True)
+        expected = WEIGHT_RETRY + WEIGHT_PHASE_FIT
+        assert score_candidate(retry, child) == expected
+
+    def test_difficulty_penalty_is_applied_per_unit(self):
+        # Two-unit mismatch should subtract 2 * WEIGHT_DIFFICULTY_PENALTY
+        child = make_recommender_child(current_difficulty=4)
+        candidate = make_candidate(difficulty=6, phase_tag="discovery", previously_failed=False)
+        expected = WEIGHT_UNSEEN - 2 * WEIGHT_DIFFICULTY_PENALTY
+        assert score_candidate(candidate, child) == expected
+
+
+# ---------------------------------------------------------------------------
+# TestPickBestProblem
+# ---------------------------------------------------------------------------
+
+class TestPickBestProblem:
+
+    def test_returns_highest_scoring_candidate(self):
+        # The candidate with the perfect-fit score should win
+        child = make_recommender_child(current_phase="practice", current_difficulty=4)
+        good = make_candidate(id="good", phase_tag="practice", difficulty=4, previously_failed=False)
+        bad = make_candidate(id="bad", phase_tag="discovery", difficulty=7, previously_failed=False)
+        result = pick_best_problem([good, bad], child)
+        assert result["id"] == "good"
+
+    def test_returns_none_when_candidates_empty(self):
+        # Empty list must return None, not raise
+        child = make_recommender_child()
+        assert pick_best_problem([], child) is None
+
+    def test_prefers_retry_over_unseen(self):
+        # A previously-failed problem should beat an unseen one with equal other factors
+        child = make_recommender_child(current_phase="practice", current_difficulty=4)
+        retry = make_candidate(id="retry", phase_tag="practice", difficulty=4, previously_failed=True)
+        unseen = make_candidate(id="unseen", phase_tag="practice", difficulty=4, previously_failed=False)
+        result = pick_best_problem([unseen, retry], child)
+        assert result["id"] == "retry"
+
+    def test_returns_single_candidate_when_only_one(self):
+        # One candidate must always be returned regardless of score
+        child = make_recommender_child()
+        only = make_candidate(id="only")
+        result = pick_best_problem([only], child)
+        assert result["id"] == "only"
+
+    def test_result_is_a_dict(self):
+        # pick_best_problem must return a dict, not an index or score
+        child = make_recommender_child()
+        candidates = [make_candidate(), make_candidate(id="p_002")]
+        result = pick_best_problem(candidates, child)
+        assert isinstance(result, dict)
+
+
+# ---------------------------------------------------------------------------
+# TestCheckPhaseSignal
+# ---------------------------------------------------------------------------
+
+class TestCheckPhaseSignal:
+
+    def test_returns_reveal_when_discovery_count_reaches_threshold(self):
+        # Exactly at the threshold — should trigger reveal
+        child = make_recommender_child(current_phase="discovery")
+        result = check_phase_signal(child, DISCOVERY_PROBLEMS_REQUIRED)
+        assert result == "reveal"
+
+    def test_returns_reveal_when_count_exceeds_threshold(self):
+        # Above the threshold — still triggers reveal
+        child = make_recommender_child(current_phase="discovery")
+        result = check_phase_signal(child, DISCOVERY_PROBLEMS_REQUIRED + 1)
+        assert result == "reveal"
+
+    def test_returns_none_when_count_below_threshold(self):
+        # One below the threshold — must not trigger reveal yet
+        child = make_recommender_child(current_phase="discovery")
+        result = check_phase_signal(child, DISCOVERY_PROBLEMS_REQUIRED - 1)
+        assert result is None
+
+    def test_returns_none_when_not_in_discovery_phase(self):
+        # In practice phase — phase signal must never fire
+        child = make_recommender_child(current_phase="practice")
+        result = check_phase_signal(child, DISCOVERY_PROBLEMS_REQUIRED)
+        assert result is None
+
+    def test_returns_none_when_count_zero(self):
+        # Zero problems seen in discovery — must not trigger
+        child = make_recommender_child(current_phase="discovery")
+        result = check_phase_signal(child, 0)
+        assert result is None
+
+
+# ---------------------------------------------------------------------------
+# TestBuildResponse
+# ---------------------------------------------------------------------------
+
+class TestBuildResponse:
+
+    def _make_unseen_candidates(self, n, trick_id="A1", difficulty=4, grade=3):
+        # Build n unseen candidates with given attributes
+        return [
+            make_candidate(id=f"p_{i:03d}", trick_id=trick_id, difficulty=difficulty,
+                           grade=grade, previously_failed=False)
+            for i in range(n)
+        ]
+
+    def test_needs_refill_true_when_remaining_below_threshold(self):
+        # Fewer than MIN_BANK_SIZE unseen left after serving → needs_refill=True
+        child = make_recommender_child()
+        # MIN_BANK_SIZE - 1 unseen candidates → remaining = MIN_BANK_SIZE - 2 after serving
+        candidates = self._make_unseen_candidates(MIN_BANK_SIZE - 1)
+        best = candidates[0]
+        result = build_response(best, candidates, child, None)
+        assert result["needs_refill"] is True
+
+    def test_needs_refill_false_when_remaining_at_or_above_threshold(self):
+        # MIN_BANK_SIZE + 1 unseen → remaining = MIN_BANK_SIZE after serving → no refill
+        child = make_recommender_child()
+        candidates = self._make_unseen_candidates(MIN_BANK_SIZE + 1)
+        best = candidates[0]
+        result = build_response(best, candidates, child, None)
+        assert result["needs_refill"] is False
+
+    def test_refill_context_is_none_when_no_refill_needed(self):
+        # When needs_refill is False, refill_context must be None
+        child = make_recommender_child()
+        candidates = self._make_unseen_candidates(MIN_BANK_SIZE + 1)
+        best = candidates[0]
+        result = build_response(best, candidates, child, None)
+        assert result["refill_context"] is None
+
+    def test_refill_context_contains_correct_fields_when_refill_needed(self):
+        # refill_context must carry trick_id, difficulty, and grade from best
+        child = make_recommender_child()
+        candidates = self._make_unseen_candidates(MIN_BANK_SIZE - 1, trick_id="B1", difficulty=5, grade=4)
+        best = candidates[0]
+        result = build_response(best, candidates, child, None)
+        assert result["needs_refill"] is True
+        assert result["refill_context"]["trick_id"] == "B1"
+        assert result["refill_context"]["difficulty"] == 5
+        assert result["refill_context"]["grade"] == 4
+
+    def test_phase_signal_reveal_returns_no_problem(self):
+        # When phase_signal is "reveal", problem_id must be None
+        child = make_recommender_child()
+        candidates = self._make_unseen_candidates(10)
+        best = candidates[0]
+        result = build_response(best, candidates, child, "reveal")
+        assert result["problem_id"] is None
+        assert result["phase_signal"] == "reveal"
+
+    def test_phase_signal_sets_needs_refill_false(self):
+        # A phase transition response never triggers a refill
+        child = make_recommender_child()
+        candidates = self._make_unseen_candidates(1)
+        best = candidates[0]
+        result = build_response(best, candidates, child, "reveal")
+        assert result["needs_refill"] is False
+
+    def test_normal_response_has_problem_id(self):
+        # Without a phase signal, problem_id must be the best candidate's id
+        child = make_recommender_child()
+        candidates = self._make_unseen_candidates(MIN_BANK_SIZE + 1)
+        best = candidates[0]
+        result = build_response(best, candidates, child, None)
+        assert result["problem_id"] == best["id"]
+
+
+# ---------------------------------------------------------------------------
+# TestComputeDifficultyAdjustment
+# ---------------------------------------------------------------------------
+
+class TestComputeDifficultyAdjustment:
+
+    def test_advances_when_hints_zero_fast_correct(self):
+        # No hints, fast answer, correct, single attempt → advance
+        answer = make_answer_result(correct=True, hints_used=0, duration_ms=20000, attempts=1)
+        result = compute_difficulty_adjustment(answer, 4, 10)
+        assert result["new_difficulty"] == 5
+        assert result["reason"] == "advance"
+
+    def test_holds_when_hints_at_or_above_threshold(self):
+        # 3 hints used → consolidate; difficulty must not increase
+        answer = make_answer_result(correct=True, hints_used=3, duration_ms=20000, attempts=1)
+        result = compute_difficulty_adjustment(answer, 4, 10)
+        assert result["new_difficulty"] == 4
+        assert result["reason"] == "consolidate"
+
+    def test_holds_when_failed_attempts_reach_threshold(self):
+        # 3 attempts (2 failures) before a correct answer → consolidate
+        answer = make_answer_result(correct=True, hints_used=0, duration_ms=20000, attempts=3)
+        result = compute_difficulty_adjustment(answer, 4, 10)
+        assert result["new_difficulty"] == 4
+        assert result["reason"] == "consolidate"
+
+    def test_does_not_exceed_difficulty_ceiling(self):
+        # Advance fires but ceiling clamps the result
+        answer = make_answer_result(correct=True, hints_used=0, duration_ms=20000, attempts=1)
+        result = compute_difficulty_adjustment(answer, 5, 5)
+        assert result["new_difficulty"] == 5
+
+    def test_does_not_exceed_difficulty_max(self):
+        # Advance fires at DIFFICULTY_MAX — must not go above it
+        answer = make_answer_result(correct=True, hints_used=0, duration_ms=20000, attempts=1)
+        result = compute_difficulty_adjustment(answer, DIFFICULTY_MAX, DIFFICULTY_MAX)
+        assert result["new_difficulty"] == DIFFICULTY_MAX
+
+    def test_result_has_required_keys(self):
+        # Output must always have new_difficulty and reason
+        answer = make_answer_result()
+        result = compute_difficulty_adjustment(answer, 4, 10)
+        assert "new_difficulty" in result
+        assert "reason" in result
+
+
+# ---------------------------------------------------------------------------
+# TestCheckMastery
+# ---------------------------------------------------------------------------
+
+class TestCheckMastery:
+
+    def test_returns_true_at_exactly_80_percent(self):
+        # 8 correct out of 10 = 80% → mastery
+        perf = (
+            make_recent_performance(n=8, correct=True)
+            + make_recent_performance(n=2, correct=False)
+        )
+        assert check_mastery(perf, MIN_PROBLEMS_PER_LEVEL) is True
+
+    def test_returns_false_at_70_percent(self):
+        # 7 correct out of 10 = 70% → below threshold
+        perf = (
+            make_recent_performance(n=7, correct=True)
+            + make_recent_performance(n=3, correct=False)
+        )
+        assert check_mastery(perf, MIN_PROBLEMS_PER_LEVEL) is False
+
+    def test_returns_false_when_practice_problems_below_minimum(self):
+        # 80% correct but too few problems solved at this level → no mastery
+        perf = make_recent_performance(n=10, correct=True)
+        assert check_mastery(perf, MIN_PROBLEMS_PER_LEVEL - 1) is False
+
+    def test_returns_false_when_fewer_than_10_recent_problems(self):
+        # Window is too short to make a reliable assessment
+        perf = make_recent_performance(n=9, correct=True)
+        assert check_mastery(perf, MIN_PROBLEMS_PER_LEVEL) is False
+
+    def test_returns_true_at_100_percent_with_enough_volume(self):
+        # 10/10 correct → definitely mastery
+        perf = make_recent_performance(n=10, correct=True)
+        assert check_mastery(perf, MIN_PROBLEMS_PER_LEVEL) is True
+
+    def test_returns_false_at_empty_performance(self):
+        # No history at all → False
+        assert check_mastery([], MIN_PROBLEMS_PER_LEVEL) is False
+
+
+# ---------------------------------------------------------------------------
+# TestComputePhaseUpdate
+# ---------------------------------------------------------------------------
+
+class TestComputePhaseUpdate:
+
+    def test_returns_practice_when_discovery_count_hits_threshold(self):
+        # Discovery phase with enough problems seen → advance to practice
+        phase_counters = {
+            "discovery_problems_seen": DISCOVERY_PROBLEMS_REQUIRED,
+            "practice_problems_solved": 0,
+        }
+        result = compute_phase_update(
+            "discovery", phase_counters, False, "A1", ["A1", "A2"]
+        )
+        assert result["phase_update"] == "practice"
+        assert result["trick_update"] is None
+
+    def test_returns_both_none_when_discovery_count_below_threshold(self):
+        # Not enough discovery problems seen → no transition
+        phase_counters = {
+            "discovery_problems_seen": DISCOVERY_PROBLEMS_REQUIRED - 1,
+            "practice_problems_solved": 0,
+        }
+        result = compute_phase_update(
+            "discovery", phase_counters, False, "A1", ["A1"]
+        )
+        assert result["phase_update"] is None
+        assert result["trick_update"] is None
+
+    def test_returns_discovery_and_trick_when_mastery_reached(self):
+        # Practice phase + mastery → advance to next trick's discovery phase
+        phase_counters = {
+            "discovery_problems_seen": 0,
+            "practice_problems_solved": MIN_PROBLEMS_PER_LEVEL,
+        }
+        # A1 is already unlocked; A2 has no prerequisites → A2 is next
+        result = compute_phase_update(
+            "practice", phase_counters, True, "A1", ["A1"]
+        )
+        assert result["phase_update"] == "discovery"
+        assert result["trick_update"] == "A2"
+
+    def test_returns_both_none_when_no_transition_condition_met(self):
+        # Practice phase, mastery not reached → no transition
+        phase_counters = {
+            "discovery_problems_seen": 0,
+            "practice_problems_solved": MIN_PROBLEMS_PER_LEVEL,
+        }
+        result = compute_phase_update(
+            "practice", phase_counters, False, "A1", ["A1"]
+        )
+        assert result["phase_update"] is None
+        assert result["trick_update"] is None
+
+    def test_new_trick_is_prerequisite_gated(self):
+        # A6 requires A4; with A4 unlocked, A6 should be the next trick after A5
+        # A1–A5 all unlocked (no prerequisites blocked), next eligible is A6 (requires A4 ✓)
+        unlocked = ["A1", "A2", "A3", "A4", "A5"]
+        phase_counters = {
+            "discovery_problems_seen": 0,
+            "practice_problems_solved": MIN_PROBLEMS_PER_LEVEL,
+        }
+        result = compute_phase_update(
+            "practice", phase_counters, True, "A5", unlocked
+        )
+        # A6 requires A4 which is unlocked → should be selected
+        assert result["trick_update"] == "A6"
+
+    def test_prerequisite_blocked_trick_not_selected(self):
+        # A6 requires A4; without A4 unlocked, A6 must not be the next trick
+        # A1, A2, A3, A5 unlocked but NOT A4 → A6 blocked
+        unlocked = ["A1", "A2", "A3", "A5"]
+        phase_counters = {
+            "discovery_problems_seen": 0,
+            "practice_problems_solved": MIN_PROBLEMS_PER_LEVEL,
+        }
+        result = compute_phase_update(
+            "practice", phase_counters, True, "A5", unlocked
+        )
+        # A4 is not unlocked → A6 blocked; A4 itself has no prerequisites so it's next
+        assert result["trick_update"] == "A4"
+        assert result["trick_update"] != "A6"
+
+    def test_advances_trick_when_cap_hit_without_mastery(self):
+        # Cap hit (7 attempts) even with mastery_reached=False → must advance trick
+        phase_counters = {
+            "discovery_problems_seen": 0,
+            "practice_problems_solved": 0,
+            "practice_problems_attempted": MAX_PROBLEMS_PER_TRICK,
+        }
+        result = compute_phase_update(
+            "practice", phase_counters, False, "A1", ["A1"]
+        )
+        assert result["phase_update"] == "discovery"
+        assert result["trick_update"] == "A2"
+
+    def test_no_advance_below_cap_without_mastery(self):
+        # One below the cap and mastery not reached → no transition
+        phase_counters = {
+            "discovery_problems_seen": 0,
+            "practice_problems_solved": 0,
+            "practice_problems_attempted": MAX_PROBLEMS_PER_TRICK - 1,
+        }
+        result = compute_phase_update(
+            "practice", phase_counters, False, "A1", ["A1"]
+        )
+        assert result["phase_update"] is None
+        assert result["trick_update"] is None
+
+    def test_cap_and_mastery_produce_same_output_shape(self):
+        # Both cap hit and mastery produce phase_update="discovery" and a trick_update
+        cap_counters = {
+            "discovery_problems_seen": 0,
+            "practice_problems_solved": 0,
+            "practice_problems_attempted": MAX_PROBLEMS_PER_TRICK,
+        }
+        mastery_counters = {
+            "discovery_problems_seen": 0,
+            "practice_problems_solved": MIN_PROBLEMS_PER_LEVEL,
+            "practice_problems_attempted": MIN_PROBLEMS_PER_LEVEL,
+        }
+        cap_result = compute_phase_update(
+            "practice", cap_counters, False, "A1", ["A1"]
+        )
+        mastery_result = compute_phase_update(
+            "practice", mastery_counters, True, "A1", ["A1"]
+        )
+        assert cap_result["phase_update"] == mastery_result["phase_update"] == "discovery"
+        assert cap_result["trick_update"] == mastery_result["trick_update"] == "A2"
+
+
+# ---------------------------------------------------------------------------
+# TestBuildAdjusterResponse
+# ---------------------------------------------------------------------------
+
+class TestBuildAdjusterResponse:
+
+    def _make_difficulty_result(self, new_difficulty=5, reason="advance"):
+        # dict — minimal difficulty result
+        return {"new_difficulty": new_difficulty, "reason": reason}
+
+    def _make_phase_result(self, phase_update=None, trick_update=None):
+        # dict — minimal phase result
+        return {"phase_update": phase_update, "trick_update": trick_update}
+
+    def test_assembles_all_fields_correctly(self):
+        # Standard case: advance, no phase change
+        result = build_adjuster_response(
+            self._make_difficulty_result(5, "advance"),
+            self._make_phase_result(),
+        )
+        assert result["new_difficulty_target"] == 5
+        assert result["adjustment_reason"] == "advance"
+        assert result["phase_update"] is None
+        assert result["trick_update"] is None
+
+    def test_trick_update_none_when_no_mastery(self):
+        # No trick transition → trick_update must be None
+        result = build_adjuster_response(
+            self._make_difficulty_result(),
+            self._make_phase_result(phase_update=None, trick_update=None),
+        )
+        assert result["trick_update"] is None
+
+    def test_phase_update_none_when_mid_practice(self):
+        # Child is practising normally with no mastery → phase_update must be None
+        result = build_adjuster_response(
+            self._make_difficulty_result(4, "maintain"),
+            self._make_phase_result(),
+        )
+        assert result["phase_update"] is None
+
+    def test_difficulty_resets_to_one_on_trick_transition(self):
+        # When a new trick is assigned, difficulty must reset to DIFFICULTY_MIN
+        result = build_adjuster_response(
+            self._make_difficulty_result(5, "advance"),
+            self._make_phase_result(phase_update="discovery", trick_update="A2"),
+        )
+        assert result["new_difficulty_target"] == DIFFICULTY_MIN
+
+    def test_trick_and_phase_update_present_on_mastery(self):
+        # Both trick_update and phase_update are forwarded from phase_result
+        result = build_adjuster_response(
+            self._make_difficulty_result(),
+            self._make_phase_result(phase_update="discovery", trick_update="B1"),
+        )
+        assert result["trick_update"] == "B1"
+        assert result["phase_update"] == "discovery"
+
+    def test_result_always_has_four_keys(self):
+        # Output dict must always contain all four required keys
+        result = build_adjuster_response(
+            self._make_difficulty_result(),
+            self._make_phase_result(),
+        )
+        for key in ("new_difficulty_target", "adjustment_reason", "phase_update", "trick_update"):
+            assert key in result
+
+
+# ---------------------------------------------------------------------------
+# TestRecommend — coordinator function
+# ---------------------------------------------------------------------------
+
+class TestRecommend:
+
+    def _make_candidates(self, n, previously_failed=False):
+        # list[dict] — n candidates all matching practice phase at difficulty 4
+        return [
+            make_candidate(id=f"p_{i:03d}", phase_tag="practice",
+                           difficulty=4, previously_failed=previously_failed)
+            for i in range(n)
+        ]
+
+    def test_returns_problem_id_in_normal_case(self):
+        # Practice phase with plenty of candidates → problem_id is set
+        child = make_recommender_child(current_phase="practice", discovery_problems_seen=0)
+        candidates = self._make_candidates(MIN_BANK_SIZE + 1)
+        result = recommend(child, candidates)
+        assert result["problem_id"] is not None
+        assert result["phase_signal"] is None
+
+    def test_returns_phase_signal_in_discovery(self):
+        # Discovery phase at threshold → phase_signal="reveal", no problem_id
+        child = make_recommender_child(
+            current_phase="discovery",
+            discovery_problems_seen=DISCOVERY_PROBLEMS_REQUIRED,
+        )
+        candidates = self._make_candidates(MIN_BANK_SIZE + 1)
+        result = recommend(child, candidates)
+        assert result["phase_signal"] == "reveal"
+        assert result["problem_id"] is None
+
+    def test_sets_needs_refill_when_bank_low(self):
+        # Fewer candidates than MIN_BANK_SIZE → needs_refill=True
+        child = make_recommender_child(current_phase="practice")
+        candidates = self._make_candidates(MIN_BANK_SIZE - 1)
+        result = recommend(child, candidates)
+        assert result["needs_refill"] is True
+
+    def test_result_has_all_required_keys(self):
+        # Output must always have all four keys regardless of path taken
+        child = make_recommender_child()
+        candidates = self._make_candidates(MIN_BANK_SIZE + 1)
+        result = recommend(child, candidates)
+        for key in ("problem_id", "needs_refill", "refill_context", "phase_signal"):
+            assert key in result
+
+    def test_handles_empty_candidates(self):
+        # No candidates → problem_id is None, needs_refill is True
+        child = make_recommender_child(current_phase="practice")
+        result = recommend(child, [])
+        assert result["problem_id"] is None
+        assert result["needs_refill"] is True
+
+    def test_custom_scorer_is_used_instead_of_default(self):
+        # A custom scorer that always picks "p_001" regardless of fit
+        # proves the scorer parameter is wired through correctly
+        child = make_recommender_child(current_phase="practice", current_difficulty=4)
+        target = make_candidate(id="p_001", phase_tag="discovery", difficulty=9)
+        other = make_candidate(id="p_002", phase_tag="practice", difficulty=4)
+
+        def always_pick_first(candidate, _child):
+            # returns 1 for p_001 and 0 for everything else
+            return 1 if candidate["id"] == "p_001" else 0
+
+        result = recommend(child, [target, other], scorer=always_pick_first)
+        # Default scorer would pick p_002 (better phase and difficulty fit)
+        # Custom scorer forces p_001 — confirms injection works
+        assert result["problem_id"] == "p_001"
+
+    def test_default_scorer_used_when_none_provided(self):
+        # Without a scorer argument, the weighted formula picks the better-fit candidate
+        child = make_recommender_child(current_phase="practice", current_difficulty=4)
+        good = make_candidate(id="good", phase_tag="practice", difficulty=4)
+        bad = make_candidate(id="bad", phase_tag="discovery", difficulty=9)
+        result = recommend(child, [bad, good])
+        assert result["problem_id"] == "good"
+
+
+# ---------------------------------------------------------------------------
+# TestProcessAnswer — coordinator function
+# ---------------------------------------------------------------------------
+
+class TestProcessAnswer:
+
+    def _call(self, answer_result=None, current_difficulty=4, difficulty_ceiling=10,
+              current_phase="practice", phase_counters=None, recent_performance=None,
+              current_trick="A1", unlocked_tricks=None):
+        # Helper — calls process_answer with sensible defaults
+        return process_answer(
+            answer_result=answer_result or make_answer_result(),
+            current_difficulty=current_difficulty,
+            difficulty_ceiling=difficulty_ceiling,
+            current_phase=current_phase,
+            phase_counters=phase_counters or {
+                "discovery_problems_seen": 0,
+                "practice_problems_solved": MIN_PROBLEMS_PER_LEVEL,
+            },
+            recent_performance=recent_performance or make_recent_performance(n=5),
+            current_trick=current_trick,
+            unlocked_tricks=unlocked_tricks or ["A1"],
+        )
+
+    def test_result_has_all_required_keys(self):
+        # Output must always have all four required keys
+        result = self._call()
+        for key in ("new_difficulty_target", "adjustment_reason", "phase_update", "trick_update"):
+            assert key in result
+
+    def test_advances_difficulty_on_clean_answer(self):
+        # Fast, no hints, correct, single attempt → difficulty advances
+        answer = make_answer_result(correct=True, hints_used=0, duration_ms=20000, attempts=1)
+        result = self._call(answer_result=answer)
+        assert result["new_difficulty_target"] == 5
+        assert result["adjustment_reason"] == "advance"
+
+    def test_phase_transitions_discovery_to_practice(self):
+        # Discovery phase with enough problems seen → phase_update="practice"
+        result = self._call(
+            current_phase="discovery",
+            phase_counters={
+                "discovery_problems_seen": DISCOVERY_PROBLEMS_REQUIRED,
+                "practice_problems_solved": 0,
+            },
+        )
+        assert result["phase_update"] == "practice"
+        assert result["trick_update"] is None
+
+    def test_trick_advances_on_mastery(self):
+        # Practice phase with 10 correct answers and enough volume → trick advances
+        perf = make_recent_performance(n=10, correct=True)
+        result = self._call(
+            current_phase="practice",
+            phase_counters={
+                "discovery_problems_seen": 0,
+                "practice_problems_solved": MIN_PROBLEMS_PER_LEVEL,
+            },
+            recent_performance=perf,
+            current_trick="A1",
+            unlocked_tricks=["A1"],
+        )
+        assert result["trick_update"] == "A2"
+        assert result["phase_update"] == "discovery"
+        assert result["new_difficulty_target"] == DIFFICULTY_MIN
+
+    def test_no_transition_when_mid_practice(self):
+        # Insufficient performance history → no mastery, no transition
+        perf = make_recent_performance(n=5, correct=True)
+        result = self._call(
+            current_phase="practice",
+            recent_performance=perf,
+        )
+        assert result["phase_update"] is None
+        assert result["trick_update"] is None
+
+    def test_forces_trick_advance_at_cap(self):
+        # 7 practice attempts with no mastery → trick_update is set, difficulty resets to 1
+        result = self._call(
+            current_phase="practice",
+            phase_counters={
+                "discovery_problems_seen": 0,
+                "practice_problems_solved": 0,
+                "practice_problems_attempted": MAX_PROBLEMS_PER_TRICK,
+            },
+            recent_performance=make_recent_performance(n=5, correct=False),
+            current_trick="A1",
+            unlocked_tricks=["A1"],
+        )
+        assert result["trick_update"] == "A2"
+        assert result["phase_update"] == "discovery"
+        assert result["new_difficulty_target"] == DIFFICULTY_MIN
+
+    def test_no_force_advance_one_below_cap(self):
+        # 6 practice attempts, no mastery → no transition yet
+        result = self._call(
+            current_phase="practice",
+            phase_counters={
+                "discovery_problems_seen": 0,
+                "practice_problems_solved": 0,
+                "practice_problems_attempted": MAX_PROBLEMS_PER_TRICK - 1,
+            },
+            recent_performance=make_recent_performance(n=5, correct=False),
+            current_trick="A1",
+            unlocked_tricks=["A1"],
+        )
+        assert result["trick_update"] is None
+        assert result["phase_update"] is None

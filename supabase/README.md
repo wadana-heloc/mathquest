@@ -23,6 +23,7 @@ and applied to the Supabase-hosted Postgres instance.
 - [The `problems` table](#the-problems-table)
 - [The `sessions` table](#the-sessions-table)
 - [The `trick_discoveries` table](#the-trick_discoveries-table)
+- [The `problem_attempts` table](#the-problem_attempts-table)
 - [Parent deletion cascade](#parent-deletion-cascade)
 - [Row-Level Security (RLS)](#row-level-security-rls)
   - [Threat model](#threat-model)
@@ -54,7 +55,12 @@ supabase/
     ├── 0009_create_tricks.sql
     ├── 0010_create_problems.sql
     ├── 0011_create_sessions.sql
-    └── 0012_create_trick_discoveries.sql
+    ├── 0012_create_trick_discoveries.sql
+    ├── 0013_extend_problems_ai_columns.sql
+    ├── 0014_add_current_trick_to_children.sql
+    ├── 0015_extend_trick_discoveries_phase_tracking.sql
+    ├── 0016_create_problem_attempts.sql
+    └── 0017_add_difficulty_to_problem_attempts.sql
 ```
 
 ---
@@ -259,7 +265,8 @@ from the auth identity in `users`.
 | `daily_coins_earned`  | `integer`     | 0       | CHECK ≥ 0. **TDD §6.4 daily cap of 300 is enforced in the API**, not the schema (this column resets daily). |
 | `daily_coins_reset_at`| `timestamptz` | `now()` | Reset-clock for the daily cap.                                |
 | `grade`               | `integer`     | 2       | School grade level CHECK 1..12. Parent-supplied at creation; default 2 (age-7 lower bound). |
-| `current_difficulty`  | `integer`     | 1       | CHECK 1..10. Adaptive engine writes here.                     |
+| `current_difficulty`  | `integer`     | 1       | CHECK 1..10. Adaptive engine writes here after each attempt.  |
+| `current_trick`       | `text` FK     | `null`  | → `public.tricks.id`. Nullable — null until first problem served. Updated when the difficulty adjuster signals a trick advance. Added in migration 0014. |
 | `created_at`          | `timestamptz` | `now()` | —                                                             |
 
 **Lifecycle.** `INSERT` is backend-only, from `POST /parent/children`,
@@ -291,18 +298,22 @@ Seeded codes: A1 (×11), A2 (×9), A3 (perfect squares), A5 (consecutive odds), 
 ## The `problems` table
 
 Source: [`migrations/0010_create_problems.sql`](migrations/0010_create_problems.sql).
+Extended by: [`migrations/0013_extend_problems_ai_columns.sql`](migrations/0013_extend_problems_ai_columns.sql).
 
-Problem catalog. Seeded with 40 canonical problems from TDD §08 (Zones 1–4, difficulties 1–9). When the AI model is integrated, new rows will be inserted here by the `GET /problems` handler before being returned to the client.
+Problem catalog. Seeded with 40 canonical problems from TDD §08 (Zones 1–4, difficulties 1–9). New rows are inserted here by the background refill task when the AI recommender signals `needs_refill=true`.
 
 > ⚠️ **Security:** `answer`, `shortcut_path`, and `shortcut_time_threshold_ms` are stored here for server-side verification only. They must **never** be selected in client-facing queries. The API always names columns explicitly — never `SELECT *` on this table from a route handler.
 
 | Column | Type | Notes |
 | ------ | ---- | ----- |
-| `id` | `uuid` PK | `gen_random_uuid()`. Stable after insert; sent to the client for attempt/hint requests. |
+| `id` | `uuid` PK | `gen_random_uuid()`. Stable after insert; sent to the client for attempt/hint requests. AI pipeline's internal string IDs (e.g. "p_001") are ignored on INSERT. |
 | `zone` | `integer` | CHECK 1..5. |
 | `category` | `text` | `arithmetic \| pattern \| invariant \| mental \| structural \| algebraic` |
 | `difficulty` | `integer` | CHECK 1..10. |
-| `trick_ids` | `text[]` | Trick codes this problem exercises (references `tricks.id` by convention; no FK since array FKs aren't native in Postgres). |
+| `trick_ids` | `text[]` | Trick codes this problem exercises (array; no native FK in Postgres). Legacy multi-trick support. |
+| `trick_id` | `text` FK | → `public.tricks.id`. Nullable. Primary trick for AI-generated problems (always a single trick). Added in migration 0013. |
+| `grade` | `integer` | Nullable. Grade level this problem targets (1–12). Set by AI pipeline on INSERT; used by `GET /problems` to match `children.grade`. Added in migration 0013. |
+| `phase_tag` | `text` | Nullable. `'discovery'` or `'practice'`. Determines which phase the problem belongs to. AI pipeline sets this on INSERT. Added in migration 0013. |
 | `stem` | `text` | Problem statement shown to the child. |
 | `answer` | `text` | **Server-only.** Stored as text; cast per `answer_type` for comparison. |
 | `answer_type` | `text` | `exact \| range \| set`. `exact` = float comparison; `set` = case-insensitive string match. |
@@ -316,7 +327,7 @@ Problem catalog. Seeded with 40 canonical problems from TDD §08 (Zones 1–4, d
 | `base_coins` | `integer` | Default 10. Multiplied by the attempt-scoring table. |
 | `created_at` | `timestamptz` | `now()`. |
 
-Index: `(zone, difficulty)` for the `GET /problems` filter query.
+Indexes: `(zone, difficulty)` for the fallback `GET /problems` query; composite `(trick_id, difficulty, grade) WHERE trick_id IS NOT NULL` for the AI recommender candidate query (added in migration 0013).
 
 ---
 
@@ -343,10 +354,13 @@ Index: `child_id`.
 ## The `trick_discoveries` table
 
 Source: [`migrations/0012_create_trick_discoveries.sql`](migrations/0012_create_trick_discoveries.sql).
+Extended by: [`migrations/0015_extend_trick_discoveries_phase_tracking.sql`](migrations/0015_extend_trick_discoveries_phase_tracking.sql).
 
-Per-child insight analytics per trick. Tracks how many times a child has demonstrated fast, correct, hint-free answers (insight detection) for a given trick. When `insight_count` reaches 3, the trick is unlocked and a journal card appears in the UI.
+Per-child insight analytics per trick. Tracks insight detection (fast, correct, hint-free answers) and pedagogical phase progress. When `insight_count` reaches 3, the trick is unlocked and a journal card appears in the UI.
 
-Also serves as the `unlocked_tricks` list sent to the AI model when integrated.
+**Two separate concerns live in this table:**
+- **Insight mechanic** (`insight_count`, `unlocked`, `unlocked_at`, `last_insight_at`) — drives the journal animation; set by `POST /problems/attempt`.
+- **Phase tracking** (`current_phase`, `discovery_problems_seen`, `practice_problems_solved`, `practice_problems_attempted`) — drives the recommender and adjuster logic; updated by `GET /problems` and `POST /problems/attempt`.
 
 | Column | Type | Notes |
 | ------ | ---- | ----- |
@@ -358,8 +372,43 @@ Also serves as the `unlocked_tricks` list sent to the AI model when integrated.
 | `unlocked_at` | `timestamptz` | Nullable. Timestamp of the unlock event. |
 | `first_seen_at` | `timestamptz` | `now()` at row creation. |
 | `last_insight_at` | `timestamptz` | Nullable. Timestamp of the most recent insight detection. |
+| `current_phase` | `text` | Default `'discovery'`. CHECK `IN ('discovery', 'practice')`. Added in migration 0015. |
+| `discovery_problems_seen` | `integer` | Default 0. Incremented by `GET /problems` while in discovery phase. CHECK ≥ 0. Added in migration 0015. |
+| `practice_problems_solved` | `integer` | Default 0. Incremented by `POST /problems/attempt` when correct + practice phase. CHECK ≥ 0. Added in migration 0015. |
+| `practice_problems_attempted` | `integer` | Default 0. Incremented by `POST /problems/attempt` in practice phase. CHECK ≥ 0. Added in migration 0015. |
 
 Unique constraint: `(child_id, trick_id)` — one row per child per trick.
+
+---
+
+## The `problem_attempts` table
+
+Source: [`migrations/0016_create_problem_attempts.sql`](migrations/0016_create_problem_attempts.sql).
+Extended by: [`migrations/0017_add_difficulty_to_problem_attempts.sql`](migrations/0017_add_difficulty_to_problem_attempts.sql).
+
+Per-child per-problem attempt history. Upserted on every `POST /problems/attempt` call. Serves three purposes:
+1. **Recommender input** — `previously_failed` flag lets the recommender give a retry bonus.
+2. **Adjuster input** — recent 10 rows at the child's current difficulty form `recent_performance`.
+3. **Solved-problem exclusion** — `GET /problems` filters out `problem_id`s where `solved_correctly = true`.
+
+| Column | Type | Notes |
+| ------ | ---- | ----- |
+| `id` | `uuid` PK | `gen_random_uuid()`. |
+| `child_id` | `uuid` FK | → `public.children.id`. Cascade-deletes with the child. |
+| `problem_id` | `uuid` FK | → `public.problems.id`. |
+| `solved_correctly` | `boolean` | True if the child ever answered correctly. |
+| `previously_failed` | `boolean` | Default `false`. Set to `true` on first incorrect answer; **never reset** even if the child later solves correctly. |
+| `hints_used` | `integer` | `hint_level_used` from the most recent attempt. CHECK ≥ 0. |
+| `duration_ms` | `integer` | Duration of the most recent attempt. CHECK ≥ 0. |
+| `attempts` | `integer` | Default 1. Incremented on each re-attempt. CHECK ≥ 1. |
+| `difficulty` | `integer` | Nullable (rows before migration 0017 have no difficulty). Denormalized from `problems.difficulty` at upsert time; avoids a JOIN in the recent-performance query. CHECK 1..10. |
+| `answered_at` | `timestamptz` | Default `now()`. Timestamp of the most recent attempt. |
+
+Unique constraint: `(child_id, problem_id)` — one row per child per problem; re-attempts update in place.
+
+Index: `(child_id, difficulty, answered_at DESC)` — supports the recent-performance query (`WHERE child_id = ? AND difficulty = ? ORDER BY answered_at DESC LIMIT 10`).
+
+**RLS:** child reads own rows (`child_id` matched via `children.user_id = auth.uid()` join). No authenticated INSERT/UPDATE — all writes go through service_role. `service_role` has full access.
 
 ---
 
@@ -469,8 +518,9 @@ and writes via `service_role`.
 | `problems` | SELECT | `problems_select_authenticated` | Any authenticated user can read problems (the API layer enforces column projection — answer never selected). |
 | `sessions` | SELECT | `sessions_select_own` | A child reads sessions where `child_id` matches their own `children.id`. |
 | `trick_discoveries` | SELECT | `trick_discoveries_select_own` | A child reads their own trick rows (same join pattern). |
+| `problem_attempts` | SELECT | `problem_attempts_select_own` | A child reads their own attempt rows (same join pattern). |
 
-INSERT / UPDATE / DELETE on all four tables: `service_role` only — no policy for authenticated means deny.
+INSERT / UPDATE / DELETE on all five tables: `service_role` only — no policy for authenticated means deny.
 
 ### How to test RLS
 

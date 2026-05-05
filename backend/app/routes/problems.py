@@ -4,13 +4,18 @@ All endpoints require a bearer token whose public.users row has role='child'.
 The role is verified from the database on every call — never trusted from the JWT.
 
 Endpoints:
-* GET  /problems        — fetch a batch of problems for the child's zone.
-* POST /problems/attempt — submit an answer; awards coins and updates streak.
+* GET  /problems         — fetch the next recommended problem for the child.
+* POST /problems/attempt — submit an answer; awards coins, updates streak and
+                           advances difficulty/phase/trick via the AI adjuster.
 * POST /problems/hint    — request the next hint tier; deducts coin cost.
 
-AI model integration is TODO. Until the AI engineer's model is ready, GET
-/problems queries the seeded problems table directly. When AI is ready, the
-flow becomes: call model → INSERT returned problem → serve to client.
+AI integration: problem_recommender and difficulty_adjuster are imported
+directly from the AI pipeline (same repo, no HTTP boundary). The pipeline
+directory is added to sys.path at module load time.
+
+Fallback: when the AI recommender finds no candidates (e.g. seeded problems
+have no trick_id), GET /problems falls back to the original zone-based query.
+POST /problems/attempt skips the adjuster when the problem has no trick_id.
 """
 
 from __future__ import annotations
@@ -19,10 +24,12 @@ import datetime
 import logging
 import math
 import random
+import sys
 import uuid
+from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from typing import List, Optional
 
 from app.errors import (
@@ -51,13 +58,32 @@ router = APIRouter(prefix="/problems", tags=["problems"])
 
 BASE_COINS = 10
 DAILY_CAP = 300
-INSIGHT_THRESHOLD = 3       # insights needed to unlock a trick
-BATCH_SIZE = 5              # problems returned per GET /problems call
+INSIGHT_THRESHOLD = 3
+BATCH_SIZE = 5
 HINT_COSTS = {1: 0, 2: 5, 3: 15}
+
+# -----------------------------------------------------------------------------
+# AI pipeline imports
+# Wire in problem_recommender and difficulty_adjuster from the AI pipeline
+# directory. These are pure Python functions — no HTTP boundary.
+# -----------------------------------------------------------------------------
+
+_AI_DIR = Path(__file__).parents[3] / "ai_agents" / "mathquest-questions-agent"
+if str(_AI_DIR) not in sys.path:
+    sys.path.insert(0, str(_AI_DIR))
+
+try:
+    from problem_recommender import recommend  # type: ignore[import-untyped]
+    from difficulty_adjuster import process_answer  # type: ignore[import-untyped]
+    from difficulty_engine import get_eligible_tricks  # type: ignore[import-untyped]
+    _AI_AVAILABLE = True
+except Exception:
+    logger.warning("AI pipeline not importable — recommender disabled.", exc_info=True)
+    _AI_AVAILABLE = False
 
 
 # -----------------------------------------------------------------------------
-# Helpers
+# Helpers — auth / context
 # -----------------------------------------------------------------------------
 
 
@@ -113,12 +139,7 @@ def _get_child_context(current: AuthUser) -> tuple[dict[str, Any], dict[str, Any
 
 
 def _ensure_session(session_id: uuid.UUID, child_id: str) -> None:
-    """Validate the session belongs to this child; create it implicitly if new.
-
-    Until POST /problems/session is built, the frontend generates a UUID for
-    the session and we insert the first time we see it. Once the session
-    endpoint exists, rows will be pre-created and we will only validate here.
-    """
+    """Validate the session belongs to this child; create it implicitly if new."""
     admin = get_admin_supabase()
 
     res = (
@@ -130,7 +151,6 @@ def _ensure_session(session_id: uuid.UUID, child_id: str) -> None:
     )
 
     if not res.data:
-        # Implicit creation — session endpoint is TODO.
         admin.table("sessions").insert(
             {"id": str(session_id), "child_id": child_id}
         ).execute()
@@ -141,6 +161,11 @@ def _ensure_session(session_id: uuid.UUID, child_id: str) -> None:
         raise SessionInvalid("Session does not belong to this child.")
     if not session["is_active"]:
         raise SessionInvalid("Session has ended.")
+
+
+# -----------------------------------------------------------------------------
+# Helpers — answer verification / coin logic
+# -----------------------------------------------------------------------------
 
 
 def _check_answer(answer_type: str, stored: str, submitted: str) -> bool:
@@ -158,7 +183,6 @@ def _check_answer(answer_type: str, stored: str, submitted: str) -> bool:
         return s.lower() == t.lower()
 
     if answer_type == "range":
-        # Stored as "low,high".
         try:
             low, high = map(float, t.split(","))
             return low <= float(s) <= high
@@ -179,20 +203,18 @@ def _coins_for_attempt(correct: bool, insight: bool, hint_level_used: int) -> in
 
 
 def _apply_daily_reset(child_row: dict[str, Any]) -> tuple[int, bool]:
-    """Return (current_daily_earned, did_reset).
-
-    Checks whether the 24 h rolling window has expired. If so, the
-    caller must include daily_coins_reset_at in the children UPDATE.
-    """
+    """Return (current_daily_earned, did_reset)."""
     now = datetime.datetime.now(datetime.timezone.utc)
     reset_str = child_row["daily_coins_reset_at"]
-    # PostgREST returns timestamptz as ISO-8601 with offset or 'Z'.
-    reset_at = datetime.datetime.fromisoformat(
-        reset_str.replace("Z", "+00:00")
-    )
+    reset_at = datetime.datetime.fromisoformat(reset_str.replace("Z", "+00:00"))
     if (now - reset_at).total_seconds() >= 86400:
         return 0, True
     return child_row["daily_coins_earned"], False
+
+
+# -----------------------------------------------------------------------------
+# Helpers — trick insight (TDD §06 mechanic, unchanged)
+# -----------------------------------------------------------------------------
 
 
 def _update_trick_insight(child_id: str, trick_ids: list[str]) -> str | None:
@@ -214,17 +236,12 @@ def _update_trick_insight(child_id: str, trick_ids: list[str]) -> str | None:
         if res.data:
             row = res.data[0]
             new_count = row["insight_count"] + 1
-            update: dict[str, Any] = {
-                "insight_count": new_count,
-                "last_insight_at": now,
-            }
+            update: dict[str, Any] = {"insight_count": new_count, "last_insight_at": now}
             newly_unlocked = new_count >= INSIGHT_THRESHOLD and not row["unlocked"]
             if newly_unlocked:
                 update["unlocked"] = True
                 update["unlocked_at"] = now
-            admin.table("trick_discoveries").update(update).eq(
-                "id", row["id"]
-            ).execute()
+            admin.table("trick_discoveries").update(update).eq("id", row["id"]).execute()
             if newly_unlocked and trick_unlocked is None:
                 trick_unlocked = trick_id
         else:
@@ -238,6 +255,139 @@ def _update_trick_insight(child_id: str, trick_ids: list[str]) -> str | None:
             ).execute()
 
     return trick_unlocked
+
+
+# -----------------------------------------------------------------------------
+# Helpers — AI recommender
+# -----------------------------------------------------------------------------
+
+
+def _fetch_unlocked_tricks(child_id: str, admin: Any) -> list[str]:
+    """Return trick IDs where unlocked=true for this child."""
+    res = (
+        admin.table("trick_discoveries")
+        .select("trick_id")
+        .eq("child_id", child_id)
+        .eq("unlocked", True)
+        .execute()
+    )
+    return [r["trick_id"] for r in (res.data or [])]
+
+
+def _fetch_phase_row(child_id: str, trick_id: str, admin: Any) -> dict[str, Any] | None:
+    """Return the trick_discoveries row for this child+trick, or None."""
+    res = (
+        admin.table("trick_discoveries")
+        .select(
+            "id, current_phase, discovery_problems_seen, "
+            "practice_problems_solved, practice_problems_attempted"
+        )
+        .eq("child_id", child_id)
+        .eq("trick_id", trick_id)
+        .limit(1)
+        .execute()
+    )
+    return res.data[0] if res.data else None
+
+
+def _ensure_trick_row(child_id: str, trick_id: str, admin: Any) -> None:
+    """Insert a trick_discoveries row for this child+trick if it doesn't exist."""
+    existing = (
+        admin.table("trick_discoveries")
+        .select("id")
+        .eq("child_id", child_id)
+        .eq("trick_id", trick_id)
+        .limit(1)
+        .execute()
+    )
+    if not existing.data:
+        admin.table("trick_discoveries").insert(
+            {
+                "child_id": child_id,
+                "trick_id": trick_id,
+                "insight_count": 0,
+                "current_phase": "discovery",
+                "discovery_problems_seen": 0,
+                "practice_problems_solved": 0,
+                "practice_problems_attempted": 0,
+            }
+        ).execute()
+
+
+def _fetch_attempts_summary(child_id: str, admin: Any) -> list[dict[str, Any]]:
+    """Return all problem_attempts rows for this child (id, solved_correctly, previously_failed)."""
+    res = (
+        admin.table("problem_attempts")
+        .select("problem_id, solved_correctly, previously_failed")
+        .eq("child_id", child_id)
+        .execute()
+    )
+    return res.data or []
+
+
+async def _refill_problem_bank(child_row: dict[str, Any], refill_context: dict[str, Any]) -> None:
+    """Background task: generate a new problem and insert it into public.problems."""
+    try:
+        from orchestrator import run_pipeline  # type: ignore[import-untyped]
+        from schemas import ChildProfileInput, ChildData, SessionStats  # type: ignore[import-untyped]
+
+        admin = get_admin_supabase()
+        unlocked = _fetch_unlocked_tricks(child_row["id"], admin)
+
+        profile = ChildProfileInput(
+            child=ChildData(
+                age=10,
+                grade=refill_context["grade"],
+                current_zone=child_row.get("current_zone", 1),
+                current_difficulty=refill_context["difficulty"],
+                difficulty_ceiling=child_row.get("difficulty_ceiling", 10),
+                unlocked_tricks=unlocked or [refill_context["trick_id"]],
+                session_stats=SessionStats(
+                    problems_solved_today=0,
+                    current_streak=0,
+                    avg_time_per_problem_ms=5000,
+                ),
+            ),
+            recent_problems=[],
+        )
+
+        problem_dict = run_pipeline(profile)
+
+        admin.table("problems").insert(
+            {
+                "zone": problem_dict.get("zone", child_row.get("current_zone", 1)),
+                "category": problem_dict.get("category", "pattern"),
+                "difficulty": problem_dict["difficulty"],
+                "trick_ids": [problem_dict["trick_id"]],
+                "trick_id": problem_dict["trick_id"],
+                "stem": problem_dict["stem"],
+                "answer": str(problem_dict["answer"]),
+                "answer_type": problem_dict.get("answer_type", "exact"),
+                "shortcut_time_threshold_ms": problem_dict.get("shortcut_time_threshold_ms"),
+                "hints": problem_dict.get("hints", []),
+                "aha_moment": problem_dict.get("aha_moment"),
+                "flavor_text": problem_dict.get("flavor_text"),
+                "tags": problem_dict.get("tags", []),
+                "estimated_brute_force_seconds": problem_dict.get("estimated_brute_force_seconds"),
+                "estimated_trick_seconds": problem_dict.get("estimated_trick_seconds"),
+                "grade": refill_context["grade"],
+                "phase_tag": "practice",
+            }
+        ).execute()
+
+        logger.info(
+            "Refill: inserted new problem for trick=%s difficulty=%d grade=%d",
+            refill_context["trick_id"],
+            refill_context["difficulty"],
+            refill_context["grade"],
+        )
+    except Exception:
+        logger.exception("Background refill failed for context %s", refill_context)
+
+
+# -----------------------------------------------------------------------------
+# Helpers — problem response
+# -----------------------------------------------------------------------------
 
 
 def _row_to_problem_response(row: dict[str, Any]) -> ProblemResponse:
@@ -256,17 +406,139 @@ def _row_to_problem_response(row: dict[str, Any]) -> ProblemResponse:
 
 
 # -----------------------------------------------------------------------------
-# GET /problems — fetch a batch
+# Helpers — AI adjuster
+# -----------------------------------------------------------------------------
+
+
+def _upsert_problem_attempt(
+    child_id: str,
+    problem_id: str,
+    correct: bool,
+    hints_used: int,
+    duration_ms: int,
+    difficulty: int,
+    admin: Any,
+) -> int:
+    """Insert or update the attempt row. Returns the new total attempts count."""
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    existing = (
+        admin.table("problem_attempts")
+        .select("previously_failed, attempts")
+        .eq("child_id", child_id)
+        .eq("problem_id", problem_id)
+        .limit(1)
+        .execute()
+    )
+
+    if existing.data:
+        row = existing.data[0]
+        new_attempts = row["attempts"] + 1
+        # previously_failed is sticky: once true, stays true regardless of later correct answers.
+        admin.table("problem_attempts").update(
+            {
+                "solved_correctly": correct,
+                "previously_failed": row["previously_failed"] or (not correct),
+                "hints_used": hints_used,
+                "duration_ms": duration_ms,
+                "attempts": new_attempts,
+                "answered_at": now,
+            }
+        ).eq("child_id", child_id).eq("problem_id", problem_id).execute()
+        return new_attempts
+    else:
+        admin.table("problem_attempts").insert(
+            {
+                "child_id": child_id,
+                "problem_id": problem_id,
+                "solved_correctly": correct,
+                "previously_failed": not correct,
+                "hints_used": hints_used,
+                "duration_ms": duration_ms,
+                "attempts": 1,
+                "difficulty": difficulty,
+            }
+        ).execute()
+        return 1
+
+
+def _apply_adjuster_results(
+    child_id: str,
+    current_trick: str,
+    result: dict[str, Any],
+    admin: Any,
+) -> None:
+    """Write new difficulty, phase, and trick changes back to the DB."""
+    now = datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+    admin.table("children").update(
+        {"current_difficulty": result["new_difficulty_target"]}
+    ).eq("id", child_id).execute()
+
+    phase_update = result.get("phase_update")
+    if phase_update:
+        admin.table("trick_discoveries").update(
+            {"current_phase": phase_update}
+        ).eq("child_id", child_id).eq("trick_id", current_trick).execute()
+
+    trick_update = result.get("trick_update")
+    if trick_update:
+        # Ensure the new trick has a fresh discovery row.
+        existing = (
+            admin.table("trick_discoveries")
+            .select("id")
+            .eq("child_id", child_id)
+            .eq("trick_id", trick_update)
+            .limit(1)
+            .execute()
+        )
+        if existing.data:
+            admin.table("trick_discoveries").update(
+                {
+                    "current_phase": "discovery",
+                    "discovery_problems_seen": 0,
+                    "practice_problems_solved": 0,
+                    "practice_problems_attempted": 0,
+                }
+            ).eq("child_id", child_id).eq("trick_id", trick_update).execute()
+        else:
+            admin.table("trick_discoveries").insert(
+                {
+                    "child_id": child_id,
+                    "trick_id": trick_update,
+                    "insight_count": 0,
+                    "current_phase": "discovery",
+                    "discovery_problems_seen": 0,
+                    "practice_problems_solved": 0,
+                    "practice_problems_attempted": 0,
+                    "first_seen_at": now,
+                }
+            ).execute()
+
+        admin.table("children").update(
+            {"current_trick": trick_update}
+        ).eq("id", child_id).execute()
+
+
+# -----------------------------------------------------------------------------
+# GET /problems — fetch the next problem
 # -----------------------------------------------------------------------------
 
 
 @router.get(
     "",
     response_model=ProblemsListResponse,
-    summary="Fetch a batch of problems for the authenticated child.",
+    summary="Fetch the next recommended problem for the authenticated child.",
 )
 async def get_problems(
-    zone: int = Query(..., ge=1, le=5, description="Zone number (1–5)."),
+    background_tasks: BackgroundTasks,
+    zone: Optional[int] = Query(
+        None,
+        ge=1,
+        le=5,
+        description="Zone number (1–5). Used only as a fallback when the AI "
+        "recommender finds no candidates (e.g. seeded problems without trick_id).",
+    ),
     difficulty: Optional[int] = Query(
         None,
         ge=1,
@@ -275,26 +547,141 @@ async def get_problems(
     ),
     exclude_ids: List[uuid.UUID] = Query(
         default=[],
-        description="Problem UUIDs already seen in the current session.",
+        description="Problem UUIDs already seen in the current session (fallback path only).",
     ),
     current: AuthUser = Depends(get_current_user),
 ) -> ProblemsListResponse:
-    """Return up to 5 randomised problems for the requested zone.
+    """Return the best problem for the child right now.
 
-    Difficulty is capped at min(child.difficulty_ceiling, parent ceiling).
-    The answer, shortcut_path, and shortcut_time_threshold_ms columns are
-    never selected — they remain server-side only.
+    Primary path (AI recommender): selects a problem via the recommender,
+    updates discovery_problems_seen, and queues a background refill when the
+    bank runs low. Returns a single problem or phase_signal="reveal" when the
+    child completes discovery phase.
 
-    TODO (AI integration): replace the DB query with a model call, INSERT
-    the returned problem, and serve the UUID-backed row.
+    Fallback (zone-based): runs when the AI pipeline is unavailable or no
+    candidates match. Requires `zone` query param; returns up to 5 shuffled
+    problems as before.
     """
     _, child_row, parent_ceiling = _get_child_context(current)
+    admin = get_admin_supabase()
 
-    # Effective difficulty: use override or adaptive target; cap at both ceilings.
     base = difficulty if difficulty is not None else child_row["current_difficulty"]
     effective = min(base, child_row["difficulty_ceiling"], parent_ceiling)
 
-    admin = get_admin_supabase()
+    child_id: str = child_row["id"]
+
+    # ------------------------------------------------------------------
+    # AI recommender path
+    # ------------------------------------------------------------------
+    if _AI_AVAILABLE:
+        current_trick: str | None = child_row.get("current_trick")
+
+        # Assign the first eligible trick for a new child.
+        if not current_trick:
+            unlocked = _fetch_unlocked_tricks(child_id, admin)
+            try:
+                eligible = get_eligible_tricks(unlocked)
+            except Exception:
+                logger.warning("get_eligible_tricks failed", exc_info=True)
+                eligible = []
+            if eligible:
+                current_trick = eligible[0]
+                _ensure_trick_row(child_id, current_trick, admin)
+                admin.table("children").update(
+                    {"current_trick": current_trick}
+                ).eq("id", child_id).execute()
+
+        if current_trick:
+            phase_row = _fetch_phase_row(child_id, current_trick, admin)
+            current_phase = (phase_row or {}).get("current_phase", "discovery")
+            disc_seen = (phase_row or {}).get("discovery_problems_seen", 0)
+
+            # Build candidate list: problems matching trick/difficulty/grade
+            # that the child has not yet solved.
+            attempts_summary = _fetch_attempts_summary(child_id, admin)
+            solved_ids = {r["problem_id"] for r in attempts_summary if r["solved_correctly"]}
+            failed_ids = {r["problem_id"] for r in attempts_summary if r["previously_failed"]}
+
+            cand_res = (
+                admin.table("problems")
+                .select("id, trick_id, difficulty, grade, phase_tag")
+                .eq("trick_id", current_trick)
+                .eq("difficulty", effective)
+                .eq("grade", child_row["grade"])
+                .execute()
+            )
+            candidates = [
+                {
+                    "id": str(r["id"]),
+                    "trick_id": r["trick_id"],
+                    "difficulty": r["difficulty"],
+                    "grade": r["grade"] or child_row["grade"],
+                    "phase_tag": r["phase_tag"] or "practice",
+                    "previously_failed": str(r["id"]) in failed_ids,
+                }
+                for r in (cand_res.data or [])
+                if str(r["id"]) not in solved_ids
+            ]
+
+            child_ctx = {
+                "current_phase": current_phase,
+                "current_difficulty": effective,
+                "current_trick": current_trick,
+                "discovery_problems_seen": disc_seen,
+            }
+
+            try:
+                rec = recommend(child_ctx, candidates)
+            except Exception:
+                logger.warning("recommend() failed", exc_info=True)
+                rec = {}
+
+            # Phase reveal: child has completed discovery — show the trick reveal
+            # animation and auto-advance to practice.
+            if rec.get("phase_signal") == "reveal":
+                if phase_row:
+                    admin.table("trick_discoveries").update(
+                        {"current_phase": "practice"}
+                    ).eq("child_id", child_id).eq("trick_id", current_trick).execute()
+                return ProblemsListResponse(problems=[], phase_signal="reveal")
+
+            problem_id = rec.get("problem_id")
+            if problem_id:
+                prob_res = (
+                    admin.table("problems")
+                    .select(
+                        "id, zone, category, difficulty, stem, "
+                        "answer_type, hints, flavor_text, tags"
+                    )
+                    .eq("id", problem_id)
+                    .limit(1)
+                    .execute()
+                )
+                if prob_res.data:
+                    # Increment discovery counter when problem is served (not after answer).
+                    if current_phase == "discovery" and phase_row:
+                        admin.table("trick_discoveries").update(
+                            {"discovery_problems_seen": disc_seen + 1}
+                        ).eq("child_id", child_id).eq("trick_id", current_trick).execute()
+
+                    if rec.get("needs_refill") and rec.get("refill_context"):
+                        background_tasks.add_task(
+                            _refill_problem_bank,
+                            child_row.copy(),
+                            rec["refill_context"],
+                        )
+
+                    return ProblemsListResponse(
+                        problems=[_row_to_problem_response(prob_res.data[0])],
+                        phase_signal=None,
+                    )
+
+    # ------------------------------------------------------------------
+    # Fallback: zone-based query (seeded 40 problems, original behaviour)
+    # ------------------------------------------------------------------
+    if zone is None:
+        return ProblemsListResponse(problems=[])
+
     res = (
         admin.table("problems")
         .select(
@@ -306,11 +693,9 @@ async def get_problems(
     )
 
     rows = res.data or []
-
-    # Filter already-seen problems for this session.
     if exclude_ids:
-        exclude_set = {str(eid) for eid in exclude_ids}
-        rows = [r for r in rows if str(r["id"]) not in exclude_set]
+        excl = {str(e) for e in exclude_ids}
+        rows = [r for r in rows if str(r["id"]) not in excl]
 
     random.shuffle(rows)
     return ProblemsListResponse(
@@ -334,27 +719,25 @@ async def attempt_problem(
 ) -> AttemptResponse:
     """Verify the answer, award coins, update streak and trick discoveries.
 
-    Coin logic (TDD §6.4):
-      - Correct + insight (fast, no hints): 3× base coins
-      - Correct + no hints, normal speed:   1× base coins
-      - Correct + hint level 1 used:        0.7× base coins
-      - Correct + hint level 2 used:        0.5× base coins
-      - Correct + hint level 3 used:        0.3× base coins, no insight
-      - Incorrect: 0 coins
-    Daily cap: 300 coins. Deduction happens at hint request time (hint endpoint).
+    After the existing coin/streak logic, calls the AI difficulty adjuster
+    (process_answer) when the problem has a trick_id and the child has a
+    current_trick assigned. Writes new difficulty, phase, and trick back to DB.
 
-    insight_detected is raised when: correct AND hint_level_used == 0 AND
-    duration_ms < shortcut_time_threshold_ms for the problem.
+    Adjuster block is wrapped in try/except — a failure there does NOT fail
+    the attempt response (coins and streak are already committed).
     """
-    _, child_row, _ = _get_child_context(current)
+    _, child_row, parent_ceiling = _get_child_context(current)
     _ensure_session(payload.session_id, child_row["id"])
 
     admin = get_admin_supabase()
 
-    # Fetch problem including server-only fields needed for verification.
+    # Fetch problem including server-only fields + trick_id/difficulty for adjuster.
     prob_res = (
         admin.table("problems")
-        .select("id, answer, answer_type, shortcut_time_threshold_ms, trick_ids")
+        .select(
+            "id, answer, answer_type, shortcut_time_threshold_ms, "
+            "trick_ids, trick_id, difficulty"
+        )
         .eq("id", str(payload.problem_id))
         .limit(1)
         .execute()
@@ -363,12 +746,10 @@ async def attempt_problem(
         raise ProblemNotFound(f"Problem {payload.problem_id} not found.")
     problem = prob_res.data[0]
 
-    # Answer verification.
     correct = _check_answer(
         problem["answer_type"], problem["answer"], payload.answer
     )
 
-    # Insight detection: correct + no hints + faster than the shortcut threshold.
     threshold_ms = problem.get("shortcut_time_threshold_ms")
     insight_detected = (
         correct
@@ -377,10 +758,8 @@ async def attempt_problem(
         and payload.duration_ms <= threshold_ms
     )
 
-    # Daily reset check.
     daily_earned, did_reset = _apply_daily_reset(child_row)
 
-    # Coin calculation with daily cap.
     raw_coins = _coins_for_attempt(correct, insight_detected, payload.hint_level_used)
     daily_cap_reached = False
 
@@ -392,7 +771,6 @@ async def attempt_problem(
         if daily_earned + coins_awarded >= DAILY_CAP:
             daily_cap_reached = True
 
-    # Streak update.
     if correct:
         new_streak = child_row["streak_current"] + 1
         new_streak_best = max(new_streak, child_row["streak_best"])
@@ -400,7 +778,6 @@ async def attempt_problem(
         new_streak = 0
         new_streak_best = child_row["streak_best"]
 
-    # Build children UPDATE.
     child_update: dict[str, Any] = {
         "streak_current": new_streak,
         "streak_best": new_streak_best,
@@ -412,14 +789,10 @@ async def attempt_problem(
         child_update["daily_coins_reset_at"] = (
             datetime.datetime.now(datetime.timezone.utc).isoformat()
         )
-        # daily_earned was reset to 0, so daily_coins_earned = only what we just awarded.
         child_update["daily_coins_earned"] = coins_awarded
 
-    admin.table("children").update(child_update).eq(
-        "id", child_row["id"]
-    ).execute()
+    admin.table("children").update(child_update).eq("id", child_row["id"]).execute()
 
-    # Re-fetch to get authoritative balance (don't trust UPDATE .data).
     updated_res = (
         admin.table("children")
         .select("coins, streak_current")
@@ -431,16 +804,141 @@ async def attempt_problem(
         new_balance = updated_res.data[0]["coins"]
         streak_count = updated_res.data[0]["streak_current"]
     else:
-        # Fallback: compute locally — better than a 500.
         new_balance = child_row["coins"] + coins_awarded
         streak_count = new_streak
 
-    # Trick insight tracking.
     trick_unlocked: str | None = None
     if insight_detected:
         trick_ids: list[str] = problem.get("trick_ids") or []
         if trick_ids:
             trick_unlocked = _update_trick_insight(child_row["id"], trick_ids)
+
+    # ------------------------------------------------------------------
+    # AI difficulty adjuster
+    # Only runs when the problem has a trick_id (AI-generated) and the
+    # child has a current_trick assigned. Wrapped in try/except so a
+    # failure here never rolls back the coins/streak already committed.
+    # ------------------------------------------------------------------
+    new_difficulty: int | None = None
+    phase_update: str | None = None
+    trick_advance: str | None = None
+
+    problem_trick_id: str | None = problem.get("trick_id")
+    current_trick: str | None = child_row.get("current_trick")
+
+    if _AI_AVAILABLE and problem_trick_id and current_trick:
+        try:
+            child_id = child_row["id"]
+            problem_difficulty = problem.get("difficulty") or child_row["current_difficulty"]
+            effective_ceiling = min(child_row["difficulty_ceiling"], parent_ceiling)
+
+            # 1. Upsert problem_attempts.
+            new_attempts = _upsert_problem_attempt(
+                child_id=child_id,
+                problem_id=str(payload.problem_id),
+                correct=correct,
+                hints_used=payload.hint_level_used,
+                duration_ms=payload.duration_ms,
+                difficulty=problem_difficulty,
+                admin=admin,
+            )
+
+            # 2. Fetch current phase row.
+            phase_row = _fetch_phase_row(child_id, current_trick, admin)
+
+            if phase_row:
+                current_phase = phase_row["current_phase"]
+
+                # 3. Update practice phase counters (after the attempt is recorded).
+                if current_phase == "practice":
+                    counter_update: dict[str, Any] = {
+                        "practice_problems_attempted": (
+                            phase_row["practice_problems_attempted"] + 1
+                        )
+                    }
+                    if correct:
+                        counter_update["practice_problems_solved"] = (
+                            phase_row["practice_problems_solved"] + 1
+                        )
+                    admin.table("trick_discoveries").update(counter_update).eq(
+                        "id", phase_row["id"]
+                    ).execute()
+                    # Re-fetch so adjuster sees post-increment values.
+                    refreshed = (
+                        admin.table("trick_discoveries")
+                        .select(
+                            "discovery_problems_seen, practice_problems_solved, "
+                            "practice_problems_attempted"
+                        )
+                        .eq("id", phase_row["id"])
+                        .limit(1)
+                        .execute()
+                    )
+                    phase_counters = refreshed.data[0] if refreshed.data else {
+                        "discovery_problems_seen": 0,
+                        "practice_problems_solved": 0,
+                        "practice_problems_attempted": 0,
+                    }
+                else:
+                    phase_counters = {
+                        "discovery_problems_seen": phase_row["discovery_problems_seen"],
+                        "practice_problems_solved": phase_row["practice_problems_solved"],
+                        "practice_problems_attempted": phase_row["practice_problems_attempted"],
+                    }
+
+                # 4. Recent performance: last 10 attempts at current difficulty.
+                perf_res = (
+                    admin.table("problem_attempts")
+                    .select("solved_correctly, hints_used, duration_ms, difficulty")
+                    .eq("child_id", child_id)
+                    .eq("difficulty", problem_difficulty)
+                    .order("answered_at", desc=True)
+                    .limit(10)
+                    .execute()
+                )
+                recent_performance = [
+                    {
+                        "difficulty": r["difficulty"] or problem_difficulty,
+                        "correct": r["solved_correctly"],
+                        "hints_used": r["hints_used"],
+                        "duration_ms": r["duration_ms"] or 0,
+                    }
+                    for r in (perf_res.data or [])
+                ]
+
+                # 5. Unlocked tricks for next-trick computation.
+                unlocked_tricks = _fetch_unlocked_tricks(child_id, admin)
+
+                # 6. Call adjuster.
+                adjuster_result = process_answer(
+                    answer_result={
+                        "correct": correct,
+                        "hints_used": payload.hint_level_used,
+                        "duration_ms": payload.duration_ms,
+                        "attempts": new_attempts,
+                    },
+                    current_difficulty=problem_difficulty,
+                    difficulty_ceiling=effective_ceiling,
+                    current_phase=current_phase,
+                    phase_counters=phase_counters,
+                    recent_performance=recent_performance,
+                    current_trick=current_trick,
+                    unlocked_tricks=unlocked_tricks,
+                )
+
+                # 7. Write results back to DB.
+                _apply_adjuster_results(child_id, current_trick, adjuster_result, admin)
+
+                new_difficulty = adjuster_result.get("new_difficulty_target")
+                phase_update = adjuster_result.get("phase_update")
+                trick_advance = adjuster_result.get("trick_update")
+
+        except Exception:
+            logger.exception(
+                "AI adjuster failed for child=%s problem=%s — coins/streak unaffected",
+                child_row["id"],
+                payload.problem_id,
+            )
 
     return AttemptResponse(
         correct=correct,
@@ -450,6 +948,9 @@ async def attempt_problem(
         streak_count=streak_count,
         trick_unlocked=trick_unlocked,
         daily_cap_reached=daily_cap_reached,
+        new_difficulty=new_difficulty,
+        phase_update=phase_update,
+        trick_advance=trick_advance,
     )
 
 
@@ -469,12 +970,9 @@ async def request_hint(
 ) -> HintResponse:
     """Return the requested hint tier and deduct its coin cost.
 
-    Hint costs (TDD §08): level 1 = 0 coins, level 2 = 5 coins, level 3 = 15 coins.
-    The child must have sufficient coins for levels 2 and 3 — if not, raises
-    InsufficientCoins (422) and the hint is NOT revealed.
-
-    Sequence enforcement (hint_level must be the next tier in order) is a
-    TODO pending the problem_attempts table being added.
+    Hint costs: level 1 = 0 coins, level 2 = 5 coins, level 3 = 15 coins.
+    Sequence enforcement (must request tier 1 before tier 2) is a TODO
+    pending problem_attempts being extended to track hint tiers per attempt.
     """
     _, child_row, _ = _get_child_context(current)
     _ensure_session(payload.session_id, child_row["id"])
@@ -511,7 +1009,6 @@ async def request_hint(
         admin.table("children").update({"coins": new_coins}).eq(
             "id", child_row["id"]
         ).execute()
-        # Re-fetch authoritative balance.
         bal_res = (
             admin.table("children")
             .select("coins")

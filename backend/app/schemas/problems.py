@@ -40,6 +40,9 @@ class ProblemResponse(BaseModel):
 
 class ProblemsListResponse(BaseModel):
     problems: List[ProblemResponse]
+    # "reveal" signals the frontend to show the trick-reveal animation.
+    # Returned instead of a problem when the child completes discovery phase.
+    phase_signal: str | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -63,6 +66,11 @@ class AttemptResponse(BaseModel):
     streak_count: int
     trick_unlocked: str | None = None
     daily_cap_reached: bool
+    # AI difficulty adjuster results — None when adjuster was not invoked
+    # (e.g. seeded problems without trick_id, or child with no current_trick).
+    new_difficulty: int | None = None
+    phase_update: str | None = None   # "practice" or "discovery"
+    trick_advance: str | None = None  # next trick code (A1–D5) when trick changes
 
 
 # ---------------------------------------------------------------------------

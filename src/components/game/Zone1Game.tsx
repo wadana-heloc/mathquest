@@ -204,7 +204,7 @@ function ObstacleBadge({ label, type }: { label: string; type: 'obstacle' | 'bos
 }
 
 function MathModal({
-  trigger, problem, coins, streak,
+  trigger, problem, coins, streak, difficulty,
   onCorrect, onInsight, onHintUsed,
   onCorrectClose, onWrongClose, onWrong,
 }: {
@@ -212,6 +212,7 @@ function MathModal({
   problem: Problem
   coins: number
   streak: number
+  difficulty?: number
   onCorrect: (r: AttemptResult) => void
   onInsight: (r: AttemptResult) => void
   onHintUsed: (r: HintResult) => void
@@ -240,6 +241,7 @@ function MathModal({
         <ProblemCard
           problem={problem}
           sessionId="zone1-session"
+          difficulty={difficulty}
           currentCoins={coins}
           currentStreak={streak}
           onCorrect={onCorrect}
@@ -304,7 +306,7 @@ function ZoneCompleteScreen({ onNext, onHub, sessionCoins }: { onNext: () => voi
 //  Main component
 // ─────────────────────────────────────────────────────────────
 
-export default function Zone1Game() {
+export default function Zone1Game({ difficulty }: { difficulty?: number } = {}) {
 
   // Refs for Phaser integration and game state that doesn't need to trigger React re-renders
   const canvasRef = useRef<HTMLDivElement>(null)// Ref to Phaser game instance so we can call methods on it without causing re-renders
@@ -366,7 +368,7 @@ export default function Zone1Game() {
 
   // ── Load problems ─────────────────────────────────────────
   useEffect(() => {
-    fetchProblems(1)
+    fetchProblems(1, difficulty)
       .then(list => {
         const map = new Map<string, Problem>()
         list.forEach(p => map.set(p.id, p))
@@ -492,6 +494,7 @@ export default function Zone1Game() {
       updateStreak(false).catch(() => {})
     } else {
       setStreak(s => s + 1)
+      window.dispatchEvent(new CustomEvent(ZONE1_EVENTS.STREAK_INCREASE))
       updateStreak(true).catch(() => {})
     }
     
@@ -540,7 +543,7 @@ export default function Zone1Game() {
     
       <ProgressHUD solved={progress.solved} total={progress.total} />
       <BossHUD phase={bossPhase} visible={bossVisible} />
-      
+
       <CoinStreak coins={coins} sessionCoins={sessionCoins} streak={streak} />
       
       {/* Back to hub
@@ -564,6 +567,7 @@ export default function Zone1Game() {
           problem={activeProblem}
           coins={coins}
           streak={streak}
+          difficulty={difficulty}
           onCorrect={handleCorrect}
           onInsight={handleInsight}
           onHintUsed={handleHintUsed}

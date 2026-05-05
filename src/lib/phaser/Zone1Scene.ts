@@ -1290,14 +1290,16 @@
 // ─────────────────────────────────────────────────────────────
 
 import Phaser from 'phaser'
+import { AudioManager } from './AudioManager'
 
 // Event names for communication from Phaser → React. Each event's detail object is defined in the dispatch calls below.
 export const ZONE1_EVENTS = {
-  SHOW_PROBLEM:  'zone1:showProblem',
-  ANSWER_RESULT: 'zone1:answerResult',
-  ZONE_COMPLETE: 'zone1:zoneComplete',
-  BOSS_PHASE:    'zone1:bossPhase',
-  PROGRESS:      'zone1:progress',
+  SHOW_PROBLEM:    'zone1:showProblem',
+  ANSWER_RESULT:   'zone1:answerResult',
+  ZONE_COMPLETE:   'zone1:zoneComplete',
+  BOSS_PHASE:      'zone1:bossPhase',
+  PROGRESS:        'zone1:progress',
+  STREAK_INCREASE: 'zone1:streakIncrease', // React → Phaser: streak incremented
 }
 // Helper to dispatch events from Phaser → React. Each event has a "detail" object with relevant data for that event.
 function dispatchToReact(name: string, detail: object) {
@@ -1539,8 +1541,20 @@ export class Zone1Scene extends Phaser.Scene {
   // answerListener is a reference to the event listener function for handling answer results from React. This allows us to remove the event listener when the scene is shut down to prevent memory leaks and unintended behavior.
   private answerListener!: (e: Event) => void
 
+  // ── Audio ───────────────────────────────────────────────────
+  // Centralized audio manager. Call this.audio.playSfx(key) / playMusic(key).
+  // All sound keys and file paths are defined in AudioManager.ts.
+  private audio!: AudioManager
+  private streakListener!:       (e: Event) => void
+  private audioSettingsListener!: (e: Event) => void
+
   constructor() { super({ key: 'Zone1Scene' }) }
-  preload() {}
+
+  preload() {
+    // Register all SFX and music assets. Placeholder files (0-byte) are silently skipped.
+    // Replace files in /public/audio/ with real audio to enable sound.
+    AudioManager.preload(this)
+  }
 
   // ═══════════════════════════════════════════════════════════
   // CREATE
@@ -1597,6 +1611,35 @@ export class Zone1Scene extends Phaser.Scene {
 
     // Companion idle chatter
     this.time.delayedCall(5000, () => this.startCompanionIdleChatter())
+
+    // ── Audio ─────────────────────────────────────────────────
+    // Initialize after all scene objects are created so the AudioContext is ready.
+    this.audio = new AudioManager(this)
+
+    // Apply persisted audio settings before playing anything
+    const MQ_AUDIO_STORAGE = 'mq_audio_settings'
+    try {
+      const raw = localStorage.getItem(MQ_AUDIO_STORAGE)
+      if (raw) {
+        const { sfxMuted, musicMuted } = JSON.parse(raw)
+        this.audio.setSfxMuted(!!sfxMuted)
+        this.audio.setMusicMuted(!!musicMuted)
+      }
+    } catch { /* ignore parse errors */ }
+
+    this.audio.playMusic('bg_main')
+
+    // Listen for real-time audio setting changes from AudioControlModal
+    this.audioSettingsListener = (e: Event) => {
+      const { sfxMuted, musicMuted } = (e as CustomEvent<{ sfxMuted: boolean; musicMuted: boolean }>).detail
+      this.audio.setSfxMuted(sfxMuted)
+      this.audio.setMusicMuted(musicMuted)
+    }
+    window.addEventListener('mq:audioSettings', this.audioSettingsListener)
+
+    // Listen for streak increases dispatched from the React layer (Zone1Game.tsx)
+    this.streakListener = () => this.audio.playSfx('streak')
+    window.addEventListener(ZONE1_EVENTS.STREAK_INCREASE, this.streakListener)
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -1604,6 +1647,9 @@ export class Zone1Scene extends Phaser.Scene {
   // ═══════════════════════════════════════════════════════════  
   shutdown() {
     window.removeEventListener(ZONE1_EVENTS.ANSWER_RESULT, this.answerListener)
+    window.removeEventListener(ZONE1_EVENTS.STREAK_INCREASE, this.streakListener)
+    window.removeEventListener('mq:audioSettings', this.audioSettingsListener)
+    this.audio?.destroy()
     ;(window as any).__zone1Scene = null
     // Remove DOM instructions overlay if still present
     const el = document.getElementById('mq-instructions')
@@ -2206,6 +2252,9 @@ export class Zone1Scene extends Phaser.Scene {
   // ═══════════════════════════════════════════════════════════
 // The main update loop handles player input, movement, and interactions. It also updates the companion's position and reactions, the boss's eye tracking and projectile attacks, and checks for collisions with platforms, obstacles, and stars. The waveTimer is used to animate the background waves by adjusting their x positions in a sine wave pattern, creating a dynamic ocean effect.
   update(_time: number, delta: number) {
+    // Saved before updatePlayer / updatePlatformCollisions so we can detect the frame the player lands.
+    const wasOnGround = this.playerOnGround
+
     this.waveTimer += delta
     this.waves.forEach((w, i) => {
       w.x = this.screenW / 2 + Math.sin(this.waveTimer * 0.001 + i * 1.2) * 20
@@ -2216,6 +2265,9 @@ export class Zone1Scene extends Phaser.Scene {
     this.updateBossEyes()
     this.updateBossProjectiles(delta)
     this.updatePlatformCollisions()
+
+    // Landing sound: fires once on the frame the player first touches ground/platform
+    if (!wasOnGround && this.playerOnGround) this.audio.playSfx('land', 0.55)
 
     if (!this.isBlocked) {
       this.checkObstacleCollisions()
@@ -2248,6 +2300,7 @@ export class Zone1Scene extends Phaser.Scene {
     if (jump && this.playerOnGround) {
       this.playerVelY = -14
       this.playerOnGround = false
+      this.audio.playSfx('jump')
       this.companionSay(this.pick(COMPANION_MESSAGES.jump), 900)
     }
 
@@ -2468,6 +2521,7 @@ export class Zone1Scene extends Phaser.Scene {
     // HUD bounce
     this.tweens.add({ targets: this.starHUD, scaleX: 1.3, scaleY: 1.3, duration: 100, yoyo: true, ease: 'Back.easeOut' })
 
+    this.audio.playSfx('collect')
     s.obj.destroy()
     this.companionSay(this.pick(COMPANION_MESSAGES.starCollect), 1400)
   }
@@ -2509,6 +2563,7 @@ export class Zone1Scene extends Phaser.Scene {
   private triggerObstacle(id: string) {
     this.activeObsId     = id
     this.obstacleBlocked = true
+    this.audio.playSfx('collision')
     const cfg = OBSTACLES.find(o => o.id === id)!
     const obs = this.obstacleObjects.get(id)
     if (obs) this.tweens.add({ targets: obs.container, x: cfg.x + 8, duration: 60, yoyo: true, repeat: 3, ease: 'Linear' })
@@ -2523,6 +2578,14 @@ export class Zone1Scene extends Phaser.Scene {
     this.activeBossPhase = nextPhase
     this.bossBlocked     = true
     this.bossAttackTimer = this.bossAttackInterval * 0.6
+    // Phase 1: boss first appears — play intro sting and switch to boss music.
+    // Phases 2 & 3: phase transition pulse only.
+    if (nextPhase === 1) {
+      this.audio.playSfx('boss_appear')
+      this.audio.playMusic('bg_boss')
+    } else {
+      this.audio.playSfx('boss_phase')
+    }
     const problemIds = ['Z1-BOSS-01', 'Z1-BOSS-02', 'Z1-BOSS-03']
     dispatchToReact(ZONE1_EVENTS.SHOW_PROBLEM, {
       type: 'boss', obstacleId: `boss-phase-${nextPhase}`,
@@ -2542,10 +2605,12 @@ export class Zone1Scene extends Phaser.Scene {
     if (!this.obstacleBlocked && !this.bossBlocked) return
     this.clearBossProjectiles()
     if (correct) {
+      this.audio.playSfx('correct')
       this.companionReactCorrect()
       if (obstacleId.startsWith('boss-phase')) this.onBossPhaseCleared()
       else this.onObstacleCleared(obstacleId)
     } else {
+      this.audio.playSfx('wrong')
       this.companionReactWrong()
       this.onWrongAnswer()
     }
@@ -2654,6 +2719,8 @@ export class Zone1Scene extends Phaser.Scene {
     if (this.bossPhase >= 3) {
       this.time.delayedCall(900, () => this.defeatBoss())
     } else {
+      // Phase cleared but more phases remain — play transition sting
+      this.audio.playSfx('boss_phase')
       this.activeBossPhase    = 0
       this.bossBlocked        = false
       this.interPhaseCooldown = true
@@ -2682,6 +2749,10 @@ export class Zone1Scene extends Phaser.Scene {
   // ═══════════════════════════════════════════════════════════
 
   private launchCelebration() {
+    // Victory fanfare SFX plays once; bg_victory loops underneath
+    this.audio.playSfx('zone_complete')
+    this.audio.playMusic('bg_victory')
+
     const cx = this.screenW / 2
     const cy = this.screenH / 2
 

@@ -50,18 +50,82 @@ const ZONE_NAMES: Record<number, string> = {
 
 // Tailwind color classes per zone (matching design system)
 const ZONE_BADGE_CLASSES: Record<number, string> = {
-  1: 'bg-teal-500/15 text-teal-300 border-teal-500/30',
+  1: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
   2: 'bg-violet-500/15 text-violet-300 border-violet-500/30',
   3: 'bg-orange-500/15 text-orange-300 border-orange-500/30',
   4: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30',
   5: 'bg-violet-500/15 text-violet-300 border-violet-500/30',
 }
 
+// Per-zone accent theme — controls card tint, input focus ring, dots, etc.
+// Gold/yellow "quest" elements (submit button, dividers) stay consistent.
+const ZONE_THEME: Record<number, {
+  cardBg: string
+  idleBorder: string
+  dotFilled: string
+  inputFocus: string
+  inputCaret: string
+  choiceSelected: string
+  cooldownRing: string
+  cooldownText: string
+}> = {
+  1: {
+    cardBg: 'bg-[#0d2a4a]',
+    idleBorder: 'border-sky-400/20',
+    dotFilled: 'bg-sky-400',
+    inputFocus: 'focus:border-sky-400/70',
+    inputCaret: 'caret-sky-400',
+    choiceSelected: 'border-sky-400 bg-sky-400/15 text-sky-300',
+    cooldownRing: 'border-sky-400/40',
+    cooldownText: 'text-sky-300',
+  },
+  2: {
+    cardBg: 'bg-[#1C1530]',
+    idleBorder: 'border-violet-500/20',
+    dotFilled: 'bg-violet-400',
+    inputFocus: 'focus:border-violet-400/70',
+    inputCaret: 'caret-violet-400',
+    choiceSelected: 'border-violet-400 bg-violet-400/15 text-violet-300',
+    cooldownRing: 'border-violet-500/40',
+    cooldownText: 'text-violet-300',
+  },
+  3: {
+    cardBg: 'bg-[#2A1E18]',
+    idleBorder: 'border-orange-500/20',
+    dotFilled: 'bg-orange-400',
+    inputFocus: 'focus:border-orange-400/70',
+    inputCaret: 'caret-orange-400',
+    choiceSelected: 'border-orange-400 bg-orange-400/15 text-orange-300',
+    cooldownRing: 'border-orange-500/40',
+    cooldownText: 'text-orange-300',
+  },
+  4: {
+    cardBg: 'bg-[#252018]',
+    idleBorder: 'border-yellow-500/20',
+    dotFilled: 'bg-yellow-400',
+    inputFocus: 'focus:border-yellow-400/70',
+    inputCaret: 'caret-yellow-400',
+    choiceSelected: 'border-yellow-400 bg-yellow-400/15 text-yellow-300',
+    cooldownRing: 'border-yellow-500/40',
+    cooldownText: 'text-yellow-300',
+  },
+  5: {
+    cardBg: 'bg-[#1C1530]',
+    idleBorder: 'border-violet-500/20',
+    dotFilled: 'bg-violet-400',
+    inputFocus: 'focus:border-violet-400/70',
+    inputCaret: 'caret-violet-400',
+    choiceSelected: 'border-violet-400 bg-violet-400/15 text-violet-300',
+    cooldownRing: 'border-violet-500/40',
+    cooldownText: 'text-violet-300',
+  },
+}
+
 // ─────────────────────────────────────────────────────────────
 //  Sub-components
 // ─────────────────────────────────────────────────────────────
 
-function DifficultyDots({ level }: { level: number }) {
+function DifficultyDots({ level, dotClass }: { level: number; dotClass: string }) {
   const filled = Math.ceil(level / 2)    // 1–10 → 1–5 dots
   return (
     <div className="flex items-center gap-1" aria-label={`Difficulty ${level} of 10`}>
@@ -71,7 +135,7 @@ function DifficultyDots({ level }: { level: number }) {
           className={`
             block w-2 h-2 rounded-full transition-all duration-300
             ${i < filled
-              ? 'bg-teal-400 scale-110'
+              ? `${dotClass} scale-110`
               : 'bg-white/10 border border-white/10'
             }
           `}
@@ -226,7 +290,7 @@ function HintBox({
 }
 
 // Cooldown overlay — shown after 3 consecutive wrong answers
-function CooldownOverlay({ seconds }: { seconds: number }) {
+function CooldownOverlay({ seconds, ringClass, textClass }: { seconds: number; ringClass: string; textClass: string }) {
   if (seconds <= 0) return null
   return (
     <div className="
@@ -234,11 +298,8 @@ function CooldownOverlay({ seconds }: { seconds: number }) {
       bg-[#1A1A2E]/90 backdrop-blur-sm
       flex flex-col items-center justify-center gap-3
     ">
-      <div className="
-        w-16 h-16 rounded-full border-4 border-teal-500/40
-        flex items-center justify-center
-      ">
-        <span className="text-2xl font-black text-teal-300 tabular-nums">
+      <div className={`w-16 h-16 rounded-full border-4 ${ringClass} flex items-center justify-center`}>
+        <span className={`text-2xl font-black ${textClass} tabular-nums`}>
           {seconds}
         </span>
       </div>
@@ -260,12 +321,13 @@ function getSetOptions(tags: string[]): string[] | null {
 }
 
 function ChoiceButtons({
-  options, selected, onSelect, disabled,
+  options, selected, onSelect, disabled, selectedClass,
 }: {
   options: string[]
   selected: string
   onSelect: (v: string) => void
   disabled: boolean
+  selectedClass: string
 }) {
   return (
     <div className="flex gap-3">
@@ -279,7 +341,7 @@ function ChoiceButtons({
             'flex-1 h-14 rounded-xl text-lg font-black uppercase tracking-wider',
             'border-2 transition-all duration-200',
             selected === opt
-              ? 'border-teal-400 bg-teal-400/15 text-teal-300 scale-[1.03]'
+              ? `${selectedClass} scale-[1.03]`
               : 'border-white/10 bg-[#16213E] text-white/60 hover:border-white/30 hover:text-white/90',
             disabled ? 'cursor-not-allowed opacity-50' : 'cursor-pointer',
           ].join(' ')}
@@ -297,6 +359,7 @@ function ChoiceButtons({
 export interface ProblemCardProps {
   problem: Problem
   sessionId: string
+  difficulty?: number
 
   // Live state passed in from the parent game component
   currentCoins: number
@@ -316,8 +379,9 @@ export interface ProblemCardProps {
 export function ProblemCard({
   problem,
   sessionId,
+  difficulty,
   currentCoins,
-  currentStreak,
+  currentStreak: _currentStreak,
   onCorrect,
   onInsight,
   onHintUsed,
@@ -419,6 +483,7 @@ export function ProblemCard({
           duration_ms,
           hint_level_used: hintLevel,
           session_id: sessionId,
+          difficulty,
         })
 
         if (result.correct) {
@@ -520,10 +585,13 @@ export function ProblemCard({
   const inputDisabled = isLoading || isResolved || cardState === 'cooldown'
   const canSubmit = inputValue.trim().length > 0 && !inputDisabled
 
+  // ── Zone theme ─────────────────────────────────────────────
+  const theme = ZONE_THEME[problem.zone] ?? ZONE_THEME[1]
+
   // ── Card border/glow per state ─────────────────────────────
   const cardBorderClass = {
-    idle: 'border-yellow-500/15',
-    loading: 'border-yellow-500/15',
+    idle: theme.idleBorder,
+    loading: theme.idleBorder,
     correct: 'border-green-400/60 shadow-[0_0_20px_rgba(34,197,94,0.15)]',
     incorrect: 'border-white/10 animate-[shake_0.45s_ease]',
     insight: 'border-violet-500/80 shadow-[0_0_28px_rgba(124,58,237,0.25)]',
@@ -558,7 +626,7 @@ export function ProblemCard({
       <div
         className={`
           relative overflow-hidden rounded-2xl border
-          bg-[#232340] transition-all duration-300
+          ${theme.cardBg} transition-all duration-300
           ${cardBorderClass}
         `}
         role="main"
@@ -578,7 +646,7 @@ export function ProblemCard({
         {/* ── Header row ──────────────────────────────────── */}
         <div className="relative flex items-start justify-between px-5 pt-5 pb-0">
           <ZoneBadge zone={problem.zone} />
-          <DifficultyDots level={problem.difficulty} />
+          <DifficultyDots level={problem.difficulty} dotClass={theme.dotFilled} />
         </div>
 
         {/* ── Flavor text ─────────────────────────────────── */}
@@ -640,13 +708,14 @@ export function ProblemCard({
                   selected={inputValue}
                   onSelect={v => setInputValue(v)}
                   disabled={inputDisabled}
+                  selectedClass={theme.choiceSelected}
                 />
               )
             }
 
             const inputBorder =
               cardState === 'idle' || cardState === 'incorrect'
-                ? 'border-white/8 focus:border-teal-400/70'
+                ? `border-white/8 ${theme.inputFocus}`
                 : cardState === 'correct'
                   ? 'border-green-400/50'
                   : cardState === 'insight'
@@ -663,7 +732,7 @@ export function ProblemCard({
                   'w-full h-14 rounded-xl text-center',
                   'text-[22px] font-black text-white tracking-wider',
                   'bg-[#16213E] outline-none',
-                  'border-2 transition-all duration-200 caret-yellow-400',
+                  `border-2 transition-all duration-200 ${theme.inputCaret}`,
                   'placeholder:text-white/15 placeholder:text-base placeholder:font-normal placeholder:tracking-normal',
                   '[appearance:textfield] [&::-webkit-outer-spin-button]:appearance-none [&::-webkit-inner-spin-button]:appearance-none',
                   inputDisabled ? 'cursor-not-allowed opacity-50' : '',
@@ -741,7 +810,7 @@ export function ProblemCard({
         )}
 
         {/* ── Cooldown overlay ─────────────────────────────── */}
-        <CooldownOverlay seconds={cooldownSecs} />
+        <CooldownOverlay seconds={cooldownSecs} ringClass={theme.cooldownRing} textClass={theme.cooldownText} />
       </div>
     </div>
   )

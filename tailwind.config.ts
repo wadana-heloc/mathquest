@@ -129,6 +129,11 @@ const config: Config = {
         "text-muted": "#6B6A66",
         "navy-light": "#252547",
         "navy-mid":   "#1E1E38",
+        // Zone card backgrounds
+        "zone1-sky":  "#0E1F38",  // deep sky blue — Zone 1 Pebble Shore
+        "zone2-cave": "#1C1530",  // deep purple   — Zone 2 Echo Caves
+        "zone3-iron": "#2A1E18",  // dark ember     — Zone 3 Iron Summit
+        "zone4-frac": "#252018",  // dark gold      — Zone 4 Fractured Expanse
       },
       fontFamily: {
         display: ["Nunito", "sans-serif"],

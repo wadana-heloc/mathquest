@@ -255,7 +255,7 @@
  *   ✅ Semantic, bookmarkable, server-readable, zero extra deps
  */
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/lib/hooks/useUser";
 import { useChildProfile } from "@/lib/hooks/useChildProfile";
@@ -263,6 +263,7 @@ import MathParticles from "@/components/phaser/MathParticles";
 import { LogoutButton } from "@/components/game/LogoutModal";
 import { SettingsButton } from "@/components/game/SettingsModal";
 import { StoryButton } from "@/components/game/StoryModal";
+import { AudioControls, loadAudioSettings, AUDIO_EVENT, type AudioSettings } from "@/components/game/AudioControlModal";
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -609,6 +610,40 @@ export default function GamePage() {
     if (profile) setSelectedZone(profile.currentZone);
   }, [profile]);
 
+  // ── Background music ───────────────────────────────────────────────────────
+  // Plays bg_main on loop at low volume. Respects the audio settings from
+  // AudioControlModal (localStorage + live mq:audioSettings events).
+  const bgRef = useRef<HTMLAudioElement | null>(null);
+  useEffect(() => {
+    const audio = new Audio('/audio/music/bg_main.mp3');
+    audio.loop   = true;
+    audio.volume = 0.20;
+    bgRef.current = audio;
+
+    const { musicMuted } = loadAudioSettings();
+    if (!musicMuted) {
+      audio.play().catch(() => {
+        // Autoplay blocked — start on first page interaction instead
+        const unlock = () => { audio.play().catch(() => {}); };
+        document.addEventListener('click', unlock, { once: true });
+        document.addEventListener('keydown', unlock, { once: true });
+      });
+    }
+
+    const onSettings = (e: Event) => {
+      const { musicMuted: muted } = (e as CustomEvent<AudioSettings>).detail;
+      if (muted) audio.pause();
+      else audio.play().catch(() => {});
+    };
+    window.addEventListener(AUDIO_EVENT, onSettings);
+
+    return () => {
+      audio.pause();
+      audio.src = '';
+      window.removeEventListener(AUDIO_EVENT, onSettings);
+    };
+  }, []);
+
   const handleStart = () => router.push(`/game/zone/${selectedZone}`);
 
   if (loading || profileLoading) return <LoadingScreen />;
@@ -623,6 +658,7 @@ export default function GamePage() {
         />
       </div>
       <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
+        <AudioControls />
         <StoryButton />
         <LogoutButton />
       </div>

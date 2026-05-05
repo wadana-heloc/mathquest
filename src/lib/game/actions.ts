@@ -86,15 +86,19 @@ async function setChildCoins(userId: string, coins: number): Promise<number> {
 
 // ─── 1. Fetch problems for a zone ─────────────────────────────────────────────
 
-export async function fetchProblems(zone: number): Promise<Problem[]> {
+export async function fetchProblems(zone: number, difficulty?: number): Promise<Problem[]> {
   const supabase = await createClient()
-  const { data, error } = await supabase
+  let q = supabase
     .from('problems')
     .select(
       'zone, category, difficulty, trick_ids, stem, shortcut_time_threshold_ms, hints, flavor_text, tags, answer_type'
     )
     .eq('zone', zone)
     .order('difficulty', { ascending: true })
+
+  if (difficulty !== undefined) q = q.eq('difficulty', difficulty)
+
+  const { data, error } = await q
 
   if (error || !data || data.length === 0) return []
 
@@ -124,6 +128,7 @@ export async function submitAnswer(payload: {
   duration_ms: number
   hint_level_used: 0 | 1 | 2 | 3
   session_id: string
+  difficulty?: number
 }): Promise<AttemptResult> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -140,12 +145,17 @@ export async function submitAnswer(payload: {
   if (!parsed) throw new Error(`Unrecognised problem ID: ${payload.problem_id}`)
 
   // Fetch the answer row (server-only column, regular client with anon key is
-  // fine because the problems table allows authenticated SELECT)
-  const { data, error } = await supabase
+  // fine because the problems table allows authenticated SELECT).
+  // Apply the same difficulty filter used in fetchProblems so idx mapping stays correct.
+  let answerQ = supabase
     .from('problems')
     .select('answer, shortcut_time_threshold_ms, difficulty')
     .eq('zone', parsed.zone)
     .order('difficulty', { ascending: true })
+
+  if (payload.difficulty !== undefined) answerQ = answerQ.eq('difficulty', payload.difficulty)
+
+  const { data, error } = await answerQ
 
   if (error || !data || data.length === 0) throw new Error('Problem not found in DB')
 

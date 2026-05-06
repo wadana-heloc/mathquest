@@ -22,9 +22,12 @@ mathquest-questions-agent/
 ├── agent_generator.py       # Agent 1: generates one problem via Claude
 ├── agent_reviewer.py        # Agent 2: validates math, hints, age-appropriateness
 ├── difficulty_engine.py     # Pure Python — computes difficulty target and eligible tricks
+├── problem_recommender.py   # Scores candidates, picks best problem, raises refill flag
+├── difficulty_adjuster.py   # Updates difficulty + phase after each child answer
+├── simulate.py              # End-to-end simulation of all four scenarios (no API needed)
 ├── schemas.py               # Pydantic models for all input/output types
 ├── config.py                # All constants: model name, token limits, thresholds
-├── test_agents.py           # 88 unit tests — run with pytest, no API calls needed
+├── test_agents.py           # 188 unit tests — run with pytest, no API calls needed
 ├── run_test.py              # Manual end-to-end test using the real API
 ├── tricks/
 │   └── tricks_reference.json   # All 25 tricks with descriptions
@@ -220,6 +223,20 @@ Lives in `difficulty_engine.py` and is owned by the AI pipeline, not the backend
 
 Advancement never fires twice in a single call (session rule and long-term rule cannot both add +1).
 
+**Calibration mode** — active on every new trick (including the first one) until the child gets their first wrong answer:
+
+Instead of the normal ±1 rules, the system fast-climbs to find the child's true level. Jump size depends on answer quality:
+
+| Answer quality | Condition | Delta |
+|---|---|---|
+| Confident | hints = 0 AND duration < 25 s | +2 (`CALIBRATION_DELTA`) |
+| Hesitant | hints > 0 OR duration ≥ 25 s | +1 (`CALIBRATION_SLOW_DELTA`) |
+| Wrong | — | −1 (`CALIBRATION_DROP`), calibration ends |
+
+Calibration state is derived entirely from existing counters — no extra DB column or parameter is needed. Mastery checks are suppressed during calibration. When a trick transition happens, calibration restarts automatically at difficulty 1.
+
+**ML scorer hook** — `process_answer()` and `compute_difficulty_adjustment()` both accept an optional `scorer` argument. Pass a trained model's predict function to replace the rule-based session-adjustment logic without changing the backend call signature. The calibration path always uses fixed rules regardless of the scorer.
+
 ---
 
 ## The 25 Tricks
@@ -290,6 +307,14 @@ All values live in `config.py`. Edit there to tune the system.
 | `CONSOLIDATE_FAILED_THRESHOLD` | `2` | Failed problems threshold for difficulty hold |
 | `CONSOLIDATE_DURATION_THRESHOLD_MS` | `90000` | Avg time threshold (ms) for difficulty hold |
 | `ADVANCE_DURATION_THRESHOLD_MS` | `25000` | Avg time threshold (ms) for difficulty advance |
+| `CALIBRATION_DELTA` | `2` | Jump per confident correct answer during calibration |
+| `CALIBRATION_SLOW_DELTA` | `1` | Jump per hesitant correct answer during calibration |
+| `CALIBRATION_DROP` | `1` | Drop when first wrong answer ends calibration |
+| `MAX_PROBLEMS_PER_TRICK` | `7` | Max attempts per trick before forced advance |
+| `MIN_BANK_SIZE` | `5` | Unseen-problem floor before triggering a background refill |
+| `DISCOVERY_PROBLEMS_REQUIRED` | `2` | Problems shown before trick reveal screen |
+| `MIN_PRACTICE_PROBLEMS` | `10` | Rolling window size for mastery check |
+| `MASTERY_THRESHOLD` | `0.80` | Correct rate to declare mastery and advance trick |
 | `RECENT_PROBLEMS_CAP` | `5` | Max recent problems sent to Agent 1 |
 | `PROMPT_CACHING_ENABLED` | `True` | Toggle Anthropic prompt caching |
 
@@ -302,3 +327,5 @@ All values live in `config.py`. Edit there to tune the system.
 - `shortcut_path` and `brute_force_path` are always stripped from the return value. Never expose them to the child client.
 - All time values are in **milliseconds** throughout — `duration_ms`, `shortcut_time_threshold_ms`, etc.
 - All trick references use **A1–D5 codes** — never integer IDs.
+- **`recommend()`** must be called before serving every problem. **`process_answer()`** must be called after every submitted answer. See `BACKEND_CONTRACT.md` for the full protocol including SQL queries, counter increments, and DB write-back rules.
+- **`calibration_active` is never stored or passed** — the adjuster derives it internally from `practice_problems_attempted` and `practice_problems_solved`. The only backend requirement is keeping those two counters accurate.

@@ -85,6 +85,26 @@ MAX_PROBLEMS_PER_TRICK = 7
 
 
 # ---------------------------------------------------------------------------
+# Calibration mode (initial level-finding for new children or new tricks)
+# When calibration_active is True the difficulty engine skips MIN_PROBLEMS_PER_LEVEL
+# and jumps by CALIBRATION_DELTA on each correct answer so it finds the child's
+# true level in a handful of problems instead of many. On the first wrong answer
+# difficulty drops by CALIBRATION_DROP and calibration ends, switching to the
+# normal session-adjustment rules.
+# ---------------------------------------------------------------------------
+
+# int — difficulty jump when a correct answer is clean (no hints, fast)
+CALIBRATION_DELTA = 2
+
+# int — difficulty jump when a correct answer is hesitant (hints used OR slow)
+# Smaller than CALIBRATION_DELTA so the child climbs more carefully when uncertain
+CALIBRATION_SLOW_DELTA = 1
+
+# int — difficulty drop when the first wrong answer ends calibration
+CALIBRATION_DROP = 1
+
+
+# ---------------------------------------------------------------------------
 # Session-level adjustment thresholds (PRD Section 09)
 # These control the delta applied to difficulty_target within a session.
 # The difficulty engine checks these in order: consolidate → advance → maintain.

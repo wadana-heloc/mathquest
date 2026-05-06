@@ -249,23 +249,31 @@ response = process_answer(
     current_trick="A1",             # from DB
     unlocked_tricks=["A1", "A2"],   # from DB
 )
+
+# No calibration_active parameter — the adjuster derives it internally from
+# practice_problems_attempted and practice_problems_solved.
 ```
 
 `response` will look like:
 
 **Normal — difficulty adjusted:**
 ```json
-{ "new_difficulty_target": 5, "adjustment_reason": "advance", "phase_update": null, "trick_update": null }
+{ "new_difficulty_target": 5, "adjustment_reason": "advance", "phase_update": null, "trick_update": null, "calibration_active": true }
 ```
 
 **Discovery phase complete:**
 ```json
-{ "new_difficulty_target": 4, "adjustment_reason": "maintain", "phase_update": "practice", "trick_update": null }
+{ "new_difficulty_target": 4, "adjustment_reason": "maintain", "phase_update": "practice", "trick_update": null, "calibration_active": true }
 ```
 
 **Trick mastered — move to next trick:**
 ```json
-{ "new_difficulty_target": 1, "adjustment_reason": "maintain", "phase_update": "discovery", "trick_update": "A2" }
+{ "new_difficulty_target": 1, "adjustment_reason": "maintain", "phase_update": "discovery", "trick_update": "A2", "calibration_active": true }
+```
+
+**Calibration complete — child's level found:**
+```json
+{ "new_difficulty_target": 6, "adjustment_reason": "calibration_complete", "phase_update": null, "trick_update": null, "calibration_active": false }
 ```
 
 ### Step 4 — Write the response to DB
@@ -351,8 +359,10 @@ WHERE child_id = :child_id AND trick_id = :current_trick
 
 **When it resets to 0:** when `process_answer()` returns `trick_update` (child advances to a new trick). The new trick's row starts at 0.
 
-**What happens when it reaches `MIN_PROBLEMS_PER_LEVEL` (5) AND correct rate ≥ 80% over last 10:**
+**What happens when it reaches `MIN_PROBLEMS_PER_LEVEL` (5) AND correct rate ≥ 80% over recent history:**
 `process_answer()` returns `trick_update = "A2"` (or whichever trick is next) and `phase_update = "discovery"`. You then write the new trick row and reset everything (see Flow 2 Step 4).
+
+The mastery window is adaptive: up to the last 10 entries if available, but as few as 5 (= `MIN_PROBLEMS_PER_LEVEL`). This allows a child to reach mastery in a single trick stint even though `MAX_PROBLEMS_PER_TRICK (7) < MIN_PRACTICE_PROBLEMS (10)`. A child with a longer history across previous tricks and difficulties is measured over the fuller window, which is more rigorous.
 
 ### `practice_problems_attempted`
 
@@ -388,5 +398,6 @@ WHERE child_id = :child_id AND trick_id = :current_trick
 - **Always call `process_answer()` after every answer** — even wrong ones. The adjuster needs every data point.
 - **`discovery_problems_seen`, `practice_problems_solved`, and `practice_problems_attempted` all reset to 0** whenever `trick_update` is not null.
 - **`current_difficulty` resets to 1** whenever `trick_update` is not null (the adjuster already sets `new_difficulty_target = 1` in this case).
+- **`calibration_active` is handled entirely inside `process_answer()`** — you do not pass it and do not store it. The only requirement on your side is that `practice_problems_attempted` is always included in `phase_counters` and is accurate (post-Step-1 increment).
 - **Time fields are always milliseconds** — `duration_ms`, `shortcut_time_threshold_ms`. Never seconds.
 - **Trick IDs are always A1–D5 strings** — never integers.

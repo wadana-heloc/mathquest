@@ -20,6 +20,9 @@ The system uses Claude as the **orchestrator** — meaning Claude decides what c
 - `agent_reviewer.py` — Agent 2: receives the generated problem, validates correctness, trick alignment, difficulty, hints, age-appropriateness, and schema; returns approval or a corrected problem
 - `difficulty_engine.py` — Pure Python logic (no AI) that computes `difficulty_target` and `eligible_tricks` from the child's recent performance data; owned by the AI pipeline so difficulty logic stays independent from the backend
 - `orchestrator.py` — Wires the full pipeline: child profile input → difficulty engine → Agent 1 → Pydantic validation → Agent 2 → output or fallback
+- `problem_recommender.py` — Scores candidate problems from the bank and picks the best fit; raises a refill flag when the bank runs low; returns the phase reveal signal when discovery is complete
+- `difficulty_adjuster.py` — Single entry point `process_answer()` called by the backend after every child answer; runs calibration, session adjustment, mastery check, and phase/trick transitions in one call
+- `simulate.py` — End-to-end simulation of four scenarios using fake in-memory state; demonstrates discovery, mastery, trick cap, and calibration; run with `python simulate.py` (no API, no DB)
 - `schemas.py` — Pydantic models for the child profile input and the problem output JSON
 - `config.py` — All hardcoded settings: model name, max tokens, retry wait time, difficulty thresholds, fallback settings
 - `tricks/` — Folder containing the 25 tricks reference document and hints rules document
@@ -215,6 +218,9 @@ Every file must follow this commenting structure:
 - **Do not generate hints that give away the answer** — a hint that solves the problem is a skip, not a hint (PRD Anti-Principle)
 - Do not expose `.env` or API keys
 - Do not skip explanations — always describe what new code does and why
+- **Do not store or pass `calibration_active` from the backend** — derive it internally inside `process_answer()` from `practice_problems_attempted` and `practice_problems_solved`; the backend must never know this field exists as a parameter
+- **Do not check mastery during calibration** — mastery is suppressed while `calibration_active` is True; a child climbing to find their true level has not proven sustained correctness at any difficulty
+- **Do not pass `scorer` from the backend** — the scorer parameter on `process_answer()` and `compute_difficulty_adjustment()` is an AI-pipeline-internal hook for swapping in an ML model without changing the backend contract
 
 ## Token Efficiency Rules
 Every API call costs tokens. These rules keep costs low without sacrificing quality.
@@ -247,17 +253,20 @@ Every API call costs tokens. These rules keep costs low without sacrificing qual
 
 
 ## Right Now
-Implementation is in progress.
+All core modules are complete.
 
 **Completed:**
 - `tricks/tricks_reference.json` — all 25 tricks, fields: `trick_id`, `name`, `category`, `category_name`, `description`
-- `schemas.py` — 7 Pydantic models: `SessionStats`, `ChildData`, `RecentProblem` (now includes `difficulty: int`), `ChildProfileInput`, `Hint`, `ProblemOutput`, `ReviewerOutput`
-- `config.py` — all constants: model name, token limits, retry settings, difficulty bounds, session thresholds, recent problems cap, `MIN_PROBLEMS_PER_LEVEL`
+- `schemas.py` — 7 Pydantic models: `SessionStats`, `ChildData`, `RecentProblem` (includes `difficulty: int`), `ChildProfileInput`, `Hint`, `ProblemOutput`, `ReviewerOutput`
+- `config.py` — all constants: model name, token limits, retry settings, difficulty bounds, session thresholds, calibration constants (`CALIBRATION_DELTA=2`, `CALIBRATION_SLOW_DELTA=1`, `CALIBRATION_DROP=1`), bank/recommender settings, scoring weights
 - `difficulty_engine.py` — 4 functions: `compute_trick_mastery`, `compute_session_adjustment`, `get_eligible_tricks` (prerequisite-gated, struggling-first ordering), `compute_difficulty_target` (volume-gated advancement); plus `TRICK_SEQUENCE` and `PREREQUISITES` constants
 - `agent_generator.py` — Agent 1: builds system prompt with caching, filters eligible tricks, calls Claude, strips markdown fences from response, returns problem dict or None
 - `agent_reviewer.py` — Agent 2: validates problem math, trick alignment, hints, schema, and age-appropriateness; strips markdown fences from response; returns ReviewerOutput dict or None
 - `orchestrator.py` — complete: wires difficulty engine → Agent 1 → Pydantic validation → Agent 2 → return or retry; fallback to `fallback_problems/` after MAX_RETRIES; strips internal fields before returning
-- `test_agents.py` — 105 unit tests (difficulty engine + both agents + orchestrator), all passing
+- `problem_recommender.py` — `recommend()` public entry point: scores candidates by phase fit / retry / unseen / difficulty delta; returns `phase_signal="reveal"` when discovery is complete; raises `needs_refill` when bank runs low
+- `difficulty_adjuster.py` — `process_answer()` public entry point: derives `calibration_active` internally (no DB column needed); quality-aware calibration (confident +2, hesitant +1, wrong → -1 + end); mastery with adaptive window; trick cap enforcement; optional `scorer` hook for ML swap
+- `simulate.py` — four end-to-end scenarios using fake in-memory state: discovery, mastery, cap, calibration
+- `test_agents.py` — 188 unit tests covering all modules, all passing
 
 **Immediate next tasks:**
 1. Build the fallback problem bank in `fallback_problems/`

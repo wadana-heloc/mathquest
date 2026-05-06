@@ -56,6 +56,18 @@ MIN_PRACTICE_PROBLEMS = 10
 
 # float — correct rate threshold to declare mastery and advance trick
 MASTERY_THRESHOLD = 0.80
+
+# int — max practice attempts per trick before forced advance (cap)
+MAX_PROBLEMS_PER_TRICK = 7
+
+# int — difficulty jump per confident correct answer during calibration
+CALIBRATION_DELTA = 2
+
+# int — difficulty jump per hesitant correct answer during calibration
+CALIBRATION_SLOW_DELTA = 1
+
+# int — difficulty drop when first wrong answer ends calibration
+CALIBRATION_DROP = 1
 ```
 
 All thresholds live here. Never hardcode them in the module files.
@@ -268,7 +280,8 @@ This module is pure deterministic Python — same philosophy as `difficulty_engi
   },
   "phase_counters": {
     "discovery_problems_seen": 2,
-    "practice_problems_solved": 7
+    "practice_problems_solved": 7,
+    "practice_problems_attempted": 8
   },
   "recent_performance": [
     {
@@ -290,84 +303,126 @@ This module is pure deterministic Python — same philosophy as `difficulty_engi
   "new_difficulty_target": 5,
   "adjustment_reason": "advance",
   "phase_update": null,
-  "trick_update": null
+  "trick_update": null,
+  "calibration_active": true
 }
 ```
 
-When a phase transition happens:
+`calibration_active` is always present. The backend does **not** need to store it — it is for informational use only (e.g. show a "finding your level" UI state). The adjuster re-derives it on every call from existing counters.
+
+When a phase transition happens (discovery complete):
 
 ```json
 {
   "new_difficulty_target": 4,
   "adjustment_reason": "maintain",
   "phase_update": "practice",
-  "trick_update": null
+  "trick_update": null,
+  "calibration_active": true
 }
 ```
 
-When a trick transition happens:
+When a trick transition happens (mastery reached or cap hit):
 
 ```json
 {
-  "new_difficulty_target": 4,
+  "new_difficulty_target": 1,
   "adjustment_reason": "maintain",
   "phase_update": "discovery",
-  "trick_update": "A2"
+  "trick_update": "A2",
+  "calibration_active": true
 }
 ```
 
-### Difficulty Adjustment Rules
+`new_difficulty_target` is always 1 on a trick transition. Calibration restarts automatically.
+
+### Calibration Mode
+
+Before normal session-adjustment rules fire, the adjuster runs a fast-climb phase. Calibration is active as long as the child has had zero wrong answers on the current trick. It is derived internally — the backend never passes or stores it.
+
+```
+calibration_active = (practice_problems_attempted - practice_problems_solved == 0)
+                     AND current_difficulty < difficulty_ceiling
+```
+
+**Timing correction:** the backend increments `practice_problems_attempted` BEFORE calling `process_answer`. For a wrong answer this inflates the count by 1. The adjuster subtracts 1 internally for wrong answers to recover the pre-answer wrong count.
+
+Calibration jump size uses hints and duration from the current answer:
+
+| Quality | Condition | Delta |
+|---|---|---|
+| Confident | hints = 0 AND duration < ADVANCE_DURATION_THRESHOLD_MS | +CALIBRATION_DELTA |
+| Hesitant | hints > 0 OR duration >= ADVANCE_DURATION_THRESHOLD_MS | +CALIBRATION_SLOW_DELTA |
+| Wrong | correct = False | −CALIBRATION_DROP, calibration ends |
+
+Mastery checks are suppressed while calibration is active.
+
+### Difficulty Adjustment Rules (normal mode)
 Reuse the logic already in `difficulty_engine.py — compute_session_adjustment`. Do not duplicate it. Import and call it.
 
 ```python
 from difficulty_engine import compute_session_adjustment
 ```
 
+An optional `scorer` parameter can be passed to both `compute_difficulty_adjustment()` and `process_answer()`. When provided it replaces `compute_session_adjustment` with the callable (e.g. an ML model's predict function). The calibration path always uses fixed rules regardless of the scorer.
+
 ### Phase Transition Rules
 
 ```
 discovery phase:
-  after DISCOVERY_PROBLEMS_REQUIRED correct problems → phase_update = "reveal"
-  (the recommender already signals this — the adjuster confirms and writes it)
-
-reveal phase:
-  this is a frontend state only — no problem is served
-  after the child taps "I got it" → backend sends phase_update = "practice" directly
-  the adjuster does not handle the reveal→practice transition
+  after DISCOVERY_PROBLEMS_REQUIRED problems seen → phase_update = "practice"
+  (process_answer returns this; backend shows reveal screen then writes phase=practice)
 
 practice phase:
   check mastery: if correct_rate >= MASTERY_THRESHOLD over last MIN_PRACTICE_PROBLEMS
   AND practice_problems_solved >= MIN_PROBLEMS_PER_LEVEL (from config.py)
-  → trick_update = next trick from get_eligible_tricks()
+  → trick_update = next trick from TRICK_SEQUENCE with all prerequisites unlocked
   → phase_update = "discovery" (new trick starts in discovery)
-  → new_difficulty_target resets to 1 for the new trick
+  → new_difficulty_target resets to DIFFICULTY_MIN for the new trick
+
+  cap rule: if practice_problems_attempted >= MAX_PROBLEMS_PER_TRICK (mastery not reached)
+  → same transition as mastery — trick_update, phase_update = "discovery", difficulty resets
 ```
 
 ### Functions To Write
 
 ```
-compute_difficulty_adjustment(answer_result: dict, current_difficulty: int, difficulty_ceiling: int) -> dict
-    # Wraps compute_session_adjustment from difficulty_engine.py
-    # Returns: {"new_difficulty": int, "reason": str}
-    # Example input: answer_result={"correct":True,"hints_used":0,"duration_ms":2900,"attempts":1}, current_difficulty=4, difficulty_ceiling=10
-    # Example output: {"new_difficulty": 5, "reason": "advance"}
+compute_difficulty_adjustment(answer_result, current_difficulty, difficulty_ceiling,
+                              calibration_active=False, scorer=None) -> dict
+    # Computes new difficulty after one answer.
+    # In calibration mode uses hints+duration to choose jump size (+2 confident, +1 hesitant).
+    # In normal mode calls scorer (or compute_session_adjustment if scorer is None).
+    # Returns: {"new_difficulty": int, "reason": str, "calibration_active": bool}
+    # Example output: {"new_difficulty": 5, "reason": "calibration_advance", "calibration_active": True}
 
 check_mastery(recent_performance: list[dict], practice_problems_solved: int) -> bool
-    # Returns True if child has hit the mastery threshold for this trick
+    # Returns True if child has hit the mastery threshold for this trick.
+    # Adaptive window: up to MIN_PRACTICE_PROBLEMS entries, minimum MIN_PROBLEMS_PER_LEVEL.
     # Returns: bool
-    # Example input: recent_performance=[{"correct":True,...} x10], practice_problems_solved=8
+    # Example input: recent_performance=[{"correct":True,...} x10], practice_problems_solved=5
     # Example output: True
 
-compute_phase_update(current_phase: str, phase_counters: dict, mastery_reached: bool, current_trick: str, unlocked_tricks: list[str]) -> dict
-    # Decides if phase or trick should change
+compute_phase_update(current_phase, phase_counters, mastery_reached, current_trick, unlocked_tricks) -> dict
+    # Decides if phase or trick should change.
+    # Also fires trick advance when practice_problems_attempted >= MAX_PROBLEMS_PER_TRICK (cap).
     # Returns: {"phase_update": str|None, "trick_update": str|None}
-    # Example input: current_phase="practice", mastery_reached=True, current_trick="A1"
     # Example output: {"phase_update": "discovery", "trick_update": "A2"}
 
-build_adjuster_response(difficulty_result: dict, phase_result: dict) -> dict
-    # Assembles the final response
-    # Returns: dict with new_difficulty_target, adjustment_reason, phase_update, trick_update
-    # Example output: {"new_difficulty_target": 5, "adjustment_reason": "advance", "phase_update": None, "trick_update": None}
+build_adjuster_response(difficulty_result: dict, phase_result: dict, calibration_active: bool) -> dict
+    # Assembles the final response. On trick transition: resets difficulty to DIFFICULTY_MIN
+    # and sets calibration_active=True so the child is re-calibrated on the new trick.
+    # Returns: dict with new_difficulty_target, adjustment_reason, phase_update, trick_update, calibration_active
+    # Example output: {"new_difficulty_target": 5, "adjustment_reason": "advance",
+    #                  "phase_update": None, "trick_update": None, "calibration_active": True}
+
+process_answer(answer_result, current_difficulty, difficulty_ceiling, current_phase,
+               phase_counters, recent_performance, current_trick, unlocked_tricks,
+               scorer=None) -> dict
+    # Single public entry point the backend calls after every answer.
+    # Derives calibration_active internally. Calls the four functions above in order.
+    # scorer: optional ML predict function — replaces compute_session_adjustment in normal mode.
+    # The backend never passes calibration_active and never passes scorer.
+    # Returns: same shape as build_adjuster_response
 ```
 
 ---
@@ -477,27 +532,46 @@ TestBuildResponse
 
 ```
 TestComputeDifficultyAdjustment
-  - advances when hints=0, fast duration, correct
-  - holds when hints >= 3
-  - holds when failed >= 2
+  - advances when hints=0, fast duration, correct (normal mode)
+  - holds when hints >= 3 (normal mode)
+  - holds when failed >= 2 (normal mode)
   - does not exceed difficulty_ceiling
+  - calibration: confident correct (no hints, fast) → +CALIBRATION_DELTA
+  - calibration: hesitant correct (hints used) → +CALIBRATION_SLOW_DELTA
+  - calibration: hesitant correct (slow) → +CALIBRATION_SLOW_DELTA
+  - calibration: hesitant stays calibration_active=True (only wrong ends calibration)
+  - calibration: wrong → -CALIBRATION_DROP, calibration_active=False
+  - calibration: wrong at floor → stays at DIFFICULTY_MIN
+  - calibration: correct at ceiling → calibration_active=False
+  - normal mode always returns calibration_active=False
 
 TestCheckMastery
   - returns True at exactly 80% correct over 10 problems
   - returns False at 70% correct
   - returns False when practice_problems_solved < MIN_PROBLEMS_PER_LEVEL
-  - returns False when fewer than 10 recent problems
+  - returns False when fewer than MIN_PROBLEMS_PER_LEVEL recent problems
+  - adaptive window: uses shorter window when history < MIN_PRACTICE_PROBLEMS
 
 TestComputePhaseUpdate
   - returns phase_update="practice" when discovery count hits threshold
   - returns phase_update="discovery" and trick_update when mastery reached
   - returns both None when no transition condition is met
-  - new trick must be a valid unlocked trick (prerequisite gated)
+  - trick_update fires when practice_problems_attempted >= MAX_PROBLEMS_PER_TRICK (cap)
+  - new trick is prerequisite-gated (only unlocked when full chain satisfied)
 
 TestBuildAdjusterResponse
-  - assembles all fields correctly
-  - trick_update is None when no mastery
-  - phase_update is None when mid-practice
+  - assembles all five fields correctly (includes calibration_active)
+  - trick transition resets difficulty to DIFFICULTY_MIN
+  - trick transition always sets calibration_active=True (restart calibration)
+  - no trick transition preserves calibration_active from difficulty_result
+
+TestProcessAnswer
+  - calibration derived from practice_problems_attempted - practice_problems_solved
+  - calibration ends on first wrong (timing correction for backend pre-increment)
+  - mastery cannot fire during calibration
+  - trick advance restarts calibration
+  - scorer=None uses rule-based compute_session_adjustment
+  - scorer=custom_fn calls custom_fn instead
 ```
 
 ---
@@ -518,3 +592,6 @@ Every file must follow the comment standard from `claude.md`:
 - Always validate inputs with Pydantic before processing
 - Always use milliseconds for time fields
 - Always use A1–D5 codes for trick references, never integer IDs
+- Never store or accept `calibration_active` from the backend — derive it internally from `practice_problems_attempted` and `practice_problems_solved` with the timing correction
+- Never check mastery during calibration — the child is being placed, not practicing
+- Never pass `scorer` from the backend — it is an AI-pipeline-internal hook for swapping in an ML model

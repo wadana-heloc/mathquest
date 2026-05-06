@@ -21,6 +21,12 @@ from schemas import ChildData, SessionStats, RecentProblem, ChildProfileInput
 from config import (
     DIFFICULTY_MIN,
     DIFFICULTY_MAX,
+    CALIBRATION_DELTA,
+    CALIBRATION_SLOW_DELTA,
+    CALIBRATION_DROP,
+    ADVANCE_DURATION_THRESHOLD_MS,
+    CONSOLIDATE_HINTS_THRESHOLD,
+    CONSOLIDATE_DURATION_THRESHOLD_MS,
     MIN_PROBLEMS_PER_LEVEL,
     MODEL_NAME,
     AGENT1_MAX_TOKENS,
@@ -1379,11 +1385,81 @@ class TestComputeDifficultyAdjustment:
         assert result["new_difficulty"] == DIFFICULTY_MAX
 
     def test_result_has_required_keys(self):
-        # Output must always have new_difficulty and reason
+        # Output must always have new_difficulty, reason, and calibration_active
         answer = make_answer_result()
         result = compute_difficulty_adjustment(answer, 4, 10)
         assert "new_difficulty" in result
         assert "reason" in result
+        assert "calibration_active" in result
+
+    def test_calibration_correct_jumps_by_delta(self):
+        # Correct answer during calibration → difficulty advances by CALIBRATION_DELTA
+        answer = make_answer_result(correct=True)
+        result = compute_difficulty_adjustment(answer, 3, 10, calibration_active=True)
+        assert result["new_difficulty"] == 3 + CALIBRATION_DELTA
+        assert result["reason"] == "calibration_advance"
+        assert result["calibration_active"] is True
+
+    def test_calibration_wrong_drops_and_ends(self):
+        # Wrong answer during calibration → drop by CALIBRATION_DROP, calibration ends
+        answer = make_answer_result(correct=False, duration_ms=20000)
+        result = compute_difficulty_adjustment(answer, 5, 10, calibration_active=True)
+        assert result["new_difficulty"] == 5 - CALIBRATION_DROP
+        assert result["reason"] == "calibration_complete"
+        assert result["calibration_active"] is False
+
+    def test_calibration_ends_when_ceiling_reached(self):
+        # Correct answer but ceiling hit → calibration_active becomes False
+        answer = make_answer_result(correct=True)
+        result = compute_difficulty_adjustment(answer, 9, 10, calibration_active=True)
+        # 9 + 2 = 11 → clamped to 10 (the ceiling)
+        assert result["new_difficulty"] == 10
+        assert result["calibration_active"] is False
+
+    def test_calibration_wrong_at_minimum_stays_at_floor(self):
+        # Wrong answer at DIFFICULTY_MIN → stays at DIFFICULTY_MIN, calibration ends
+        answer = make_answer_result(correct=False, duration_ms=20000)
+        result = compute_difficulty_adjustment(answer, DIFFICULTY_MIN, 10, calibration_active=True)
+        assert result["new_difficulty"] == DIFFICULTY_MIN
+        assert result["calibration_active"] is False
+
+    def test_calibration_hesitant_on_hints(self):
+        # Correct with 1 hint → hesitant → jump by CALIBRATION_SLOW_DELTA not CALIBRATION_DELTA
+        answer = make_answer_result(correct=True, hints_used=1, duration_ms=20000)
+        result = compute_difficulty_adjustment(answer, 3, 10, calibration_active=True)
+        assert result["new_difficulty"] == 3 + CALIBRATION_SLOW_DELTA
+        assert result["reason"] == "calibration_advance"
+        assert result["calibration_active"] is True
+
+    def test_calibration_hesitant_on_slow_duration(self):
+        # Correct but at the slow threshold → hesitant → +CALIBRATION_SLOW_DELTA
+        answer = make_answer_result(correct=True, hints_used=0, duration_ms=ADVANCE_DURATION_THRESHOLD_MS)
+        result = compute_difficulty_adjustment(answer, 3, 10, calibration_active=True)
+        assert result["new_difficulty"] == 3 + CALIBRATION_SLOW_DELTA
+        assert result["reason"] == "calibration_advance"
+
+    def test_calibration_hesitant_stays_active(self):
+        # Hesitant correct answers keep calibration ON — only a wrong answer ends it
+        answer = make_answer_result(correct=True, hints_used=3, duration_ms=80000)
+        result = compute_difficulty_adjustment(answer, 5, 10, calibration_active=True)
+        assert result["calibration_active"] is True
+
+    def test_calibration_confident_needs_both_conditions(self):
+        # Fast but with hints → hesitant (+CALIBRATION_SLOW_DELTA), not confident
+        answer = make_answer_result(correct=True, hints_used=1, duration_ms=10000)
+        result = compute_difficulty_adjustment(answer, 3, 10, calibration_active=True)
+        assert result["new_difficulty"] == 3 + CALIBRATION_SLOW_DELTA
+
+        # No hints but slow → hesitant (+CALIBRATION_SLOW_DELTA), not confident
+        answer2 = make_answer_result(correct=True, hints_used=0, duration_ms=ADVANCE_DURATION_THRESHOLD_MS + 1)
+        result2 = compute_difficulty_adjustment(answer2, 3, 10, calibration_active=True)
+        assert result2["new_difficulty"] == 3 + CALIBRATION_SLOW_DELTA
+
+    def test_normal_mode_returns_calibration_active_false(self):
+        # Outside calibration the flag is always False in the response
+        answer = make_answer_result(correct=True, hints_used=0, duration_ms=20000, attempts=1)
+        result = compute_difficulty_adjustment(answer, 4, 10, calibration_active=False)
+        assert result["calibration_active"] is False
 
 
 # ---------------------------------------------------------------------------
@@ -1413,10 +1489,33 @@ class TestCheckMastery:
         perf = make_recent_performance(n=10, correct=True)
         assert check_mastery(perf, MIN_PROBLEMS_PER_LEVEL - 1) is False
 
-    def test_returns_false_when_fewer_than_10_recent_problems(self):
-        # Window is too short to make a reliable assessment
-        perf = make_recent_performance(n=9, correct=True)
+    def test_returns_false_when_history_shorter_than_min_problems_per_level(self):
+        # Fewer than MIN_PROBLEMS_PER_LEVEL entries — too short for any window
+        perf = make_recent_performance(n=MIN_PROBLEMS_PER_LEVEL - 1, correct=True)
         assert check_mastery(perf, MIN_PROBLEMS_PER_LEVEL) is False
+
+    def test_returns_true_with_short_but_sufficient_history(self):
+        # History shorter than MIN_PRACTICE_PROBLEMS but >= MIN_PROBLEMS_PER_LEVEL
+        # and 100% correct — adaptive window should allow mastery
+        perf = make_recent_performance(n=MIN_PROBLEMS_PER_LEVEL, correct=True)
+        assert check_mastery(perf, MIN_PROBLEMS_PER_LEVEL) is True
+
+    def test_adaptive_window_uses_full_history_when_available(self):
+        # With 10 entries the full window is used; 7/10 = 70% → below threshold
+        perf = (
+            make_recent_performance(n=7, correct=True)
+            + make_recent_performance(n=3, correct=False)
+        )
+        assert check_mastery(perf, MIN_PROBLEMS_PER_LEVEL) is False
+
+    def test_adaptive_window_uses_partial_history_below_cap(self):
+        # 7 entries (> MIN_PROBLEMS_PER_LEVEL, < MIN_PRACTICE_PROBLEMS): window=7
+        # 6/7 ≈ 86% > 80% → mastery
+        perf = (
+            make_recent_performance(n=6, correct=True)
+            + make_recent_performance(n=1, correct=False)
+        )
+        assert check_mastery(perf, MIN_PROBLEMS_PER_LEVEL) is True
 
     def test_returns_true_at_100_percent_with_enough_volume(self):
         # 10/10 correct → definitely mastery
@@ -1566,9 +1665,9 @@ class TestComputePhaseUpdate:
 
 class TestBuildAdjusterResponse:
 
-    def _make_difficulty_result(self, new_difficulty=5, reason="advance"):
+    def _make_difficulty_result(self, new_difficulty=5, reason="advance", calibration_active=False):
         # dict — minimal difficulty result
-        return {"new_difficulty": new_difficulty, "reason": reason}
+        return {"new_difficulty": new_difficulty, "reason": reason, "calibration_active": calibration_active}
 
     def _make_phase_result(self, phase_update=None, trick_update=None):
         # dict — minimal phase result
@@ -1579,17 +1678,20 @@ class TestBuildAdjusterResponse:
         result = build_adjuster_response(
             self._make_difficulty_result(5, "advance"),
             self._make_phase_result(),
+            calibration_active=False,
         )
         assert result["new_difficulty_target"] == 5
         assert result["adjustment_reason"] == "advance"
         assert result["phase_update"] is None
         assert result["trick_update"] is None
+        assert result["calibration_active"] is False
 
     def test_trick_update_none_when_no_mastery(self):
         # No trick transition → trick_update must be None
         result = build_adjuster_response(
             self._make_difficulty_result(),
             self._make_phase_result(phase_update=None, trick_update=None),
+            calibration_active=False,
         )
         assert result["trick_update"] is None
 
@@ -1598,6 +1700,7 @@ class TestBuildAdjusterResponse:
         result = build_adjuster_response(
             self._make_difficulty_result(4, "maintain"),
             self._make_phase_result(),
+            calibration_active=False,
         )
         assert result["phase_update"] is None
 
@@ -1606,25 +1709,46 @@ class TestBuildAdjusterResponse:
         result = build_adjuster_response(
             self._make_difficulty_result(5, "advance"),
             self._make_phase_result(phase_update="discovery", trick_update="A2"),
+            calibration_active=False,
         )
         assert result["new_difficulty_target"] == DIFFICULTY_MIN
+
+    def test_calibration_restarts_on_trick_transition(self):
+        # Trick transition always resets calibration_active to True regardless of input
+        result = build_adjuster_response(
+            self._make_difficulty_result(5, "advance"),
+            self._make_phase_result(phase_update="discovery", trick_update="A2"),
+            calibration_active=False,
+        )
+        assert result["calibration_active"] is True
+
+    def test_calibration_preserved_when_no_trick_transition(self):
+        # When no trick changes, calibration_active from the difficulty result is passed through
+        result = build_adjuster_response(
+            self._make_difficulty_result(3, "calibration_advance", calibration_active=True),
+            self._make_phase_result(),
+            calibration_active=True,
+        )
+        assert result["calibration_active"] is True
 
     def test_trick_and_phase_update_present_on_mastery(self):
         # Both trick_update and phase_update are forwarded from phase_result
         result = build_adjuster_response(
             self._make_difficulty_result(),
             self._make_phase_result(phase_update="discovery", trick_update="B1"),
+            calibration_active=False,
         )
         assert result["trick_update"] == "B1"
         assert result["phase_update"] == "discovery"
 
-    def test_result_always_has_four_keys(self):
-        # Output dict must always contain all four required keys
+    def test_result_always_has_five_keys(self):
+        # Output dict must always contain all five required keys
         result = build_adjuster_response(
             self._make_difficulty_result(),
             self._make_phase_result(),
+            calibration_active=False,
         )
-        for key in ("new_difficulty_target", "adjustment_reason", "phase_update", "trick_update"):
+        for key in ("new_difficulty_target", "adjustment_reason", "phase_update", "trick_update", "calibration_active"):
             assert key in result
 
 
@@ -1717,7 +1841,8 @@ class TestProcessAnswer:
     def _call(self, answer_result=None, current_difficulty=4, difficulty_ceiling=10,
               current_phase="practice", phase_counters=None, recent_performance=None,
               current_trick="A1", unlocked_tricks=None):
-        # Helper — calls process_answer with sensible defaults
+        # Helper — calls process_answer with sensible defaults.
+        # calibration_active is derived internally by process_answer; not passed here.
         return process_answer(
             answer_result=answer_result or make_answer_result(),
             current_difficulty=current_difficulty,
@@ -1726,6 +1851,7 @@ class TestProcessAnswer:
             phase_counters=phase_counters or {
                 "discovery_problems_seen": 0,
                 "practice_problems_solved": MIN_PROBLEMS_PER_LEVEL,
+                "practice_problems_attempted": MIN_PROBLEMS_PER_LEVEL,
             },
             recent_performance=recent_performance or make_recent_performance(n=5),
             current_trick=current_trick,
@@ -1733,15 +1859,109 @@ class TestProcessAnswer:
         )
 
     def test_result_has_all_required_keys(self):
-        # Output must always have all four required keys
+        # Output must always have all five required keys including calibration_active
         result = self._call()
-        for key in ("new_difficulty_target", "adjustment_reason", "phase_update", "trick_update"):
+        for key in ("new_difficulty_target", "adjustment_reason", "phase_update", "trick_update", "calibration_active"):
             assert key in result
 
+    def _calibration_counters(self):
+        # phase_counters that put the child in calibration: zero wrong answers in practice
+        return {"discovery_problems_seen": 0, "practice_problems_solved": 0, "practice_problems_attempted": 0}
+
+    def _post_calibration_counters(self):
+        # phase_counters that signal calibration is over: attempted > solved (at least one wrong),
+        # and enough solved to satisfy mastery volume check.
+        return {"discovery_problems_seen": 0, "practice_problems_solved": MIN_PROBLEMS_PER_LEVEL,
+                "practice_problems_attempted": MIN_PROBLEMS_PER_LEVEL + 1}
+
+    def test_calibration_advances_fast_on_correct(self):
+        # practice_problems_attempted == 0 → calibration derived as True → jump by CALIBRATION_DELTA
+        answer = make_answer_result(correct=True)
+        result = self._call(
+            answer_result=answer,
+            current_difficulty=3,
+            phase_counters=self._calibration_counters(),
+            recent_performance=make_recent_performance(n=0),
+        )
+        assert result["new_difficulty_target"] == 3 + CALIBRATION_DELTA
+        assert result["adjustment_reason"] == "calibration_advance"
+        assert result["calibration_active"] is True
+
+    def test_calibration_ends_on_first_wrong(self):
+        # practice_problems_attempted == 0 → calibration True → wrong answer ends it
+        answer = make_answer_result(correct=False, duration_ms=20000)
+        result = self._call(
+            answer_result=answer,
+            current_difficulty=5,
+            phase_counters=self._calibration_counters(),
+            recent_performance=make_recent_performance(n=0),
+        )
+        assert result["new_difficulty_target"] == 5 - CALIBRATION_DROP
+        assert result["adjustment_reason"] == "calibration_complete"
+        assert result["calibration_active"] is False
+
+    def test_calibration_fires_on_first_wrong_with_post_increment_counters(self):
+        # The backend increments practice_problems_attempted BEFORE calling process_answer.
+        # So the first wrong answer arrives with attempted=1, solved=0 (post-increment).
+        # The timing correction must recover pre_wrong=0 and fire calibration_complete.
+        answer = make_answer_result(correct=False, duration_ms=20000)
+        result = self._call(
+            answer_result=answer,
+            current_difficulty=7,
+            current_phase="practice",
+            phase_counters={"discovery_problems_seen": 0, "practice_problems_solved": 1,
+                            "practice_problems_attempted": 2},  # post-increment: 1 correct then 1 wrong
+            recent_performance=make_recent_performance(n=0),
+        )
+        assert result["new_difficulty_target"] == 7 - CALIBRATION_DROP
+        assert result["adjustment_reason"] == "calibration_complete"
+        assert result["calibration_active"] is False
+
+    def test_mastery_cannot_fire_during_calibration(self):
+        # Even with 10/10 correct and enough practice_problems_solved, mastery must not
+        # trigger a trick transition when calibration is active (no wrong answers yet).
+        perf = make_recent_performance(n=10, correct=True)
+        result = self._call(
+            answer_result=make_answer_result(correct=True),
+            current_difficulty=3,
+            current_phase="practice",
+            phase_counters={"discovery_problems_seen": 0, "practice_problems_solved": MIN_PROBLEMS_PER_LEVEL,
+                            "practice_problems_attempted": MIN_PROBLEMS_PER_LEVEL},
+            recent_performance=perf,
+            current_trick="A1",
+            unlocked_tricks=["A1"],
+        )
+        # Mastery suppressed → no trick transition, difficulty jumps by CALIBRATION_DELTA
+        assert result["trick_update"] is None
+        assert result["new_difficulty_target"] == 3 + CALIBRATION_DELTA
+
+    def test_calibration_restarts_when_trick_advances(self):
+        # After a trick advance, new trick counters are all zero → calibration restarts
+        perf = make_recent_performance(n=10, correct=True)
+        result = self._call(
+            answer_result=make_answer_result(correct=True),
+            current_difficulty=3,
+            current_phase="practice",
+            phase_counters=self._post_calibration_counters(),
+            recent_performance=perf,
+            current_trick="A1",
+            unlocked_tricks=["A1"],
+        )
+        # Trick advanced → difficulty resets and calibration restarts
+        assert result["trick_update"] == "A2"
+        assert result["new_difficulty_target"] == DIFFICULTY_MIN
+        assert result["calibration_active"] is True
+
     def test_advances_difficulty_on_clean_answer(self):
-        # Fast, no hints, correct, single attempt → difficulty advances
+        # Fast, no hints, correct, single attempt → difficulty advances by +1 (normal mode).
+        # practice_problems_attempted=1, practice_problems_solved=0 → one wrong in practice
+        # → calibration is off → normal session-adjustment fires → +1 advance.
         answer = make_answer_result(correct=True, hints_used=0, duration_ms=20000, attempts=1)
-        result = self._call(answer_result=answer)
+        result = self._call(
+            answer_result=answer,
+            phase_counters={"discovery_problems_seen": 0, "practice_problems_solved": 0,
+                            "practice_problems_attempted": 1},
+        )
         assert result["new_difficulty_target"] == 5
         assert result["adjustment_reason"] == "advance"
 
@@ -1758,13 +1978,16 @@ class TestProcessAnswer:
         assert result["trick_update"] is None
 
     def test_trick_advances_on_mastery(self):
-        # Practice phase with 10 correct answers and enough volume → trick advances
+        # Practice phase with 10 correct answers and enough volume → trick advances.
+        # practice_problems_attempted > practice_problems_solved signals calibration is
+        # over (at least one wrong answer happened before), so mastery can fire.
         perf = make_recent_performance(n=10, correct=True)
         result = self._call(
             current_phase="practice",
             phase_counters={
                 "discovery_problems_seen": 0,
                 "practice_problems_solved": MIN_PROBLEMS_PER_LEVEL,
+                "practice_problems_attempted": MIN_PROBLEMS_PER_LEVEL + 1,
             },
             recent_performance=perf,
             current_trick="A1",
@@ -1774,11 +1997,16 @@ class TestProcessAnswer:
         assert result["phase_update"] == "discovery"
         assert result["new_difficulty_target"] == DIFFICULTY_MIN
 
-    def test_no_transition_when_mid_practice(self):
-        # Insufficient performance history → no mastery, no transition
-        perf = make_recent_performance(n=5, correct=True)
+    def test_no_transition_when_correct_rate_below_threshold(self):
+        # 3/5 correct = 60% < 80% mastery threshold → no transition
+        perf = (
+            make_recent_performance(n=3, correct=True)
+            + make_recent_performance(n=2, correct=False)
+        )
         result = self._call(
             current_phase="practice",
+            phase_counters={"discovery_problems_seen": 0, "practice_problems_solved": MIN_PROBLEMS_PER_LEVEL,
+                            "practice_problems_attempted": MIN_PROBLEMS_PER_LEVEL + 1},
             recent_performance=perf,
         )
         assert result["phase_update"] is None

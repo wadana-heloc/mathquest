@@ -9,6 +9,10 @@
 from config import (
     DIFFICULTY_MIN,
     DIFFICULTY_MAX,
+    CALIBRATION_DELTA,
+    CALIBRATION_SLOW_DELTA,
+    CALIBRATION_DROP,
+    ADVANCE_DURATION_THRESHOLD_MS,
     DISCOVERY_PROBLEMS_REQUIRED,
     MIN_PRACTICE_PROBLEMS,
     MIN_PROBLEMS_PER_LEVEL,
@@ -23,21 +27,67 @@ def compute_difficulty_adjustment(
     answer_result: dict,
     current_difficulty: int,
     difficulty_ceiling: int,
+    calibration_active: bool = False,
+    scorer=None,
 ) -> dict:
-    # What: wraps compute_session_adjustment from difficulty_engine.py to compute
-    #       the difficulty delta for a single answer. Maps answer_result fields to
-    #       the session-stats and recent-problems inputs that compute_session_adjustment
-    #       expects. Each failed attempt is modelled as a separate failed problem entry.
-    # Return: dict with "new_difficulty" (int) and "reason" (str)
-    # Example input: answer_result={"correct":True,"hints_used":0,"duration_ms":20000,"attempts":1},
-    #                current_difficulty=4, difficulty_ceiling=10
-    # Example output: {"new_difficulty": 5, "reason": "advance"}
-
-    # int — number of attempts before the final answer; at least 1
-    attempts = answer_result.get("attempts", 1)
+    # What: computes the new difficulty after one child answer.
+    #       In calibration mode, uses answer quality (correct/wrong + hints + duration) to
+    #       decide how aggressively to climb: confident answer → +CALIBRATION_DELTA,
+    #       hesitant answer → +CALIBRATION_SLOW_DELTA, heavy struggle on correct →
+    #       stay here (calibration_ceiling), wrong → drop -CALIBRATION_DROP and end.
+    #       Outside calibration: calls scorer(session_stats, recent_problems) → {"delta", "reason"}.
+    #       scorer defaults to None → uses the rule-based compute_session_adjustment.
+    #       Pass a trained ML model's predict function as scorer to swap in ML with no
+    #       other code changes. Scorer must accept (SessionStats, list[RecentProblem])
+    #       and return {"delta": int, "reason": str}.
+    # Return: dict with "new_difficulty" (int), "reason" (str), "calibration_active" (bool)
+    # Example input (calibration, confident): answer_result={"correct":True,"hints_used":0,"duration_ms":5000,"attempts":1},
+    #                current_difficulty=3, difficulty_ceiling=10, calibration_active=True
+    # Example output: {"new_difficulty": 5, "reason": "calibration_advance", "calibration_active": True}
 
     # bool — whether the child ultimately answered correctly
     correct = answer_result["correct"]
+
+    # Calibration path: climb toward the child's true level using answer quality signals.
+    # Two outcomes on a correct answer:
+    #   confident (no hints AND fast) → +CALIBRATION_DELTA — safe to skip a level
+    #   hesitant  (hints OR slow)     → +CALIBRATION_SLOW_DELTA — climb carefully
+    # Calibration only ends on a wrong answer: drop -CALIBRATION_DROP and lock in.
+    # Keeping calibration active until a wrong answer preserves the invariant that
+    # calibration_active is derivable from (attempted - solved == 0) — no DB column needed.
+    if calibration_active:
+        if correct:
+            # int — hints the child needed on this specific answer
+            hints_used = answer_result["hints_used"]
+
+            # int — time in ms the child spent on this answer
+            duration_ms = answer_result["duration_ms"]
+
+            # bool — child solved it cleanly: no scaffolding needed, completed quickly
+            confident = hints_used == 0 and duration_ms < ADVANCE_DURATION_THRESHOLD_MS
+
+            # int — full jump when confident, smaller step when hesitant (hints or slow)
+            jump = CALIBRATION_DELTA if confident else CALIBRATION_SLOW_DELTA
+
+            # int — effective ceiling the child can never exceed
+            effective_ceiling = min(DIFFICULTY_MAX, difficulty_ceiling)
+
+            # int — new difficulty clamped to valid range and ceiling
+            new_difficulty = max(DIFFICULTY_MIN, min(current_difficulty + jump, effective_ceiling))
+
+            # bool — end calibration if there is nowhere higher to climb
+            still_calibrating = new_difficulty < effective_ceiling
+
+            return {"new_difficulty": new_difficulty, "reason": "calibration_advance", "calibration_active": still_calibrating}
+        else:
+            # int — drop back one step from the level that proved too hard; floor at minimum
+            new_difficulty = max(DIFFICULTY_MIN, current_difficulty - CALIBRATION_DROP)
+            return {"new_difficulty": new_difficulty, "reason": "calibration_complete", "calibration_active": False}
+
+    # Normal path (post-calibration): use session-adjustment rules.
+
+    # int — number of attempts before the final answer; at least 1
+    attempts = answer_result.get("attempts", 1)
 
     # int — failed attempts = (attempts - 1) if correct, else all attempts
     failed_count = (attempts - 1) if correct else attempts
@@ -80,35 +130,41 @@ def compute_difficulty_adjustment(
         avg_time_per_problem_ms=answer_result["duration_ms"],
     )
 
-    # dict — {"delta": int, "reason": str} from the session-level rule engine
-    adjustment = compute_session_adjustment(synthetic_stats, synthetic_problems)
+    # dict — {"delta": int, "reason": str} from the scorer (rule-based or ML)
+    _scorer = scorer if scorer is not None else compute_session_adjustment
+    adjustment = _scorer(synthetic_stats, synthetic_problems)
 
     # int — new difficulty clamped to valid range and child's ceiling
     new_difficulty = current_difficulty + adjustment["delta"]
     new_difficulty = max(DIFFICULTY_MIN, min(new_difficulty, DIFFICULTY_MAX, difficulty_ceiling))
 
-    return {"new_difficulty": new_difficulty, "reason": adjustment["reason"]}
+    return {"new_difficulty": new_difficulty, "reason": adjustment["reason"], "calibration_active": False}
 
 
 def check_mastery(recent_performance: list, practice_problems_solved: int) -> bool:
-    # What: determines whether the child has mastered the current trick by checking
-    #       their correct rate over the last MIN_PRACTICE_PROBLEMS problems and
-    #       confirming they have solved enough problems at this level.
-    #       Returns False early when the history is too short to measure reliably.
+    # What: determines whether the child has mastered the current trick.
+    #       Uses an adaptive window: up to MIN_PRACTICE_PROBLEMS entries if available,
+    #       but at least MIN_PROBLEMS_PER_LEVEL. This lets new children reach mastery
+    #       within a single trick stint even though MAX_PROBLEMS_PER_TRICK < MIN_PRACTICE_PROBLEMS.
+    #       For experienced children with a full history the window is the full 10 entries,
+    #       which is more rigorous. The correct-rate threshold is the same in both cases.
     # Return: bool — True if mastery threshold is met, False otherwise
-    # Example input: recent_performance=[{"correct":True,...}x10], practice_problems_solved=8
-    # Example output: True
+    # Example input: recent_performance=[{"correct":True,...}x6], practice_problems_solved=5
+    # Example output: True  (window=6, rate=100%)
 
-    # Guard: need at least MIN_PRACTICE_PROBLEMS entries to make a reliable assessment
-    if len(recent_performance) < MIN_PRACTICE_PROBLEMS:
-        return False
-
-    # Guard: child must have solved a minimum number of problems before advancing
+    # Guard: child must have solved enough problems on this specific trick before advancing
     if practice_problems_solved < MIN_PROBLEMS_PER_LEVEL:
         return False
 
-    # list[dict] — the most recent MIN_PRACTICE_PROBLEMS entries
-    window = recent_performance[-MIN_PRACTICE_PROBLEMS:]
+    # Guard: need at least MIN_PROBLEMS_PER_LEVEL entries to form a meaningful window
+    if len(recent_performance) < MIN_PROBLEMS_PER_LEVEL:
+        return False
+
+    # int — adaptive window size: full history up to the cap, minimum MIN_PROBLEMS_PER_LEVEL
+    window_size = min(len(recent_performance), MIN_PRACTICE_PROBLEMS)
+
+    # list[dict] — the most recent window_size entries
+    window = recent_performance[-window_size:]
 
     # float — fraction of problems in the window answered correctly
     correct_rate = sum(1 for p in window if p["correct"]) / len(window)
@@ -172,27 +228,33 @@ def compute_phase_update(
     return {"phase_update": None, "trick_update": None}
 
 
-def build_adjuster_response(difficulty_result: dict, phase_result: dict) -> dict:
+def build_adjuster_response(difficulty_result: dict, phase_result: dict, calibration_active: bool) -> dict:
     # What: assembles the final response dict the /adjust endpoint returns.
     #       When a trick transition occurs, resets the difficulty target to
-    #       DIFFICULTY_MIN so the child starts the new trick from the beginning.
-    # Return: dict with new_difficulty_target, adjustment_reason, phase_update, trick_update
+    #       DIFFICULTY_MIN and restarts calibration so the child finds their
+    #       true level on the new trick from scratch.
+    # Return: dict with new_difficulty_target, adjustment_reason, phase_update, trick_update, calibration_active
     # Example output: {"new_difficulty_target": 5, "adjustment_reason": "advance",
-    #                  "phase_update": None, "trick_update": None}
+    #                  "phase_update": None, "trick_update": None, "calibration_active": False}
 
     # int — base difficulty from the adjustment; overridden to 1 on trick change
     new_difficulty = difficulty_result["new_difficulty"]
 
-    # When the child advances to a new trick, reset difficulty to the floor so
-    # they are not immediately dropped into a hard problem on an unfamiliar concept
+    # bool — calibration state to return to the backend; reset on every trick change
+    new_calibration_active = calibration_active
+
+    # When the child advances to a new trick, reset difficulty to the floor and
+    # restart calibration — the child must find their true level on the new concept
     if phase_result["trick_update"] is not None:
         new_difficulty = DIFFICULTY_MIN
+        new_calibration_active = True
 
     return {
         "new_difficulty_target": new_difficulty,
         "adjustment_reason": difficulty_result["reason"],
         "phase_update": phase_result["phase_update"],
         "trick_update": phase_result["trick_update"],
+        "calibration_active": new_calibration_active,
     }
 
 
@@ -205,28 +267,61 @@ def process_answer(
     recent_performance: list,
     current_trick: str,
     unlocked_tricks: list,
+    scorer=None,
 ) -> dict:
     # What: single entry point the backend calls after every child answer.
     #       Coordinates compute_difficulty_adjustment → check_mastery →
     #       compute_phase_update → build_adjuster_response in the correct order.
     #       The backend never calls those four functions directly.
-    # Return: dict with new_difficulty_target, adjustment_reason, phase_update, trick_update
+    #       calibration_active is derived internally — the backend does not pass it.
+    #       scorer: optional callable(SessionStats, list[RecentProblem]) -> {"delta", "reason"}.
+    #       Pass a trained ML model's predict function here to replace the rule-based
+    #       session-adjustment logic. Omit (or pass None) to keep rule-based behavior.
+    #       The calibration path always uses fixed rules regardless of scorer.
+    # Return: dict with new_difficulty_target, adjustment_reason, phase_update, trick_update, calibration_active
     # Example input: answer_result={"correct":True,"hints_used":0,"duration_ms":2900,"attempts":1},
     #                current_difficulty=4, difficulty_ceiling=10, current_phase="practice",
-    #                phase_counters={"discovery_problems_seen":0,"practice_problems_solved":8},
+    #                phase_counters={"discovery_problems_seen":0,"practice_problems_solved":8,
+    #                                "practice_problems_attempted":9},
     #                recent_performance=[...10 entries...], current_trick="A1",
     #                unlocked_tricks=["A1","A2"]
     # Example output: {"new_difficulty_target": 5, "adjustment_reason": "advance",
-    #                  "phase_update": None, "trick_update": None}
+    #                  "phase_update": None, "trick_update": None, "calibration_active": False}
 
-    # dict — {"new_difficulty": int, "reason": str}
+    # Calibration state: True when the child has had zero wrong answers on this trick
+    # AND has not yet hit their difficulty ceiling.
+    #
+    # Timing correction: the backend increments practice_problems_attempted BEFORE
+    # calling process_answer (so the current answer is already counted). For a wrong
+    # answer, attempted - solved is 1 too high — subtract 1 to recover the pre-answer
+    # wrong count. For a correct answer no adjustment is needed (both attempted and
+    # solved both incremented, so the difference is unchanged).
+    # In discovery phase the practice counters are not updated, so pre_wrong = 0.
+    if current_phase == "practice":
+        attempted = phase_counters.get("practice_problems_attempted", 0)
+        solved = phase_counters.get("practice_problems_solved", 0)
+        correction = 0 if answer_result.get("correct", True) else 1
+        pre_wrong = max(0, attempted - solved - correction)
+    else:
+        pre_wrong = 0  # discovery: practice counters not yet updated
+
+    # bool — True when calibration is still active
+    calibration_active = pre_wrong == 0 and current_difficulty < min(DIFFICULTY_MAX, difficulty_ceiling)
+
+    # dict — {"new_difficulty": int, "reason": str, "calibration_active": bool}
     difficulty_result = compute_difficulty_adjustment(
-        answer_result, current_difficulty, difficulty_ceiling
+        answer_result, current_difficulty, difficulty_ceiling, calibration_active, scorer
     )
 
-    # bool — True if the child has hit the mastery threshold for the current trick
-    mastery_reached = check_mastery(
-        recent_performance, phase_counters["practice_problems_solved"]
+    # bool — updated calibration state after this answer
+    updated_calibration = difficulty_result["calibration_active"]
+
+    # bool — True if the child has hit the mastery threshold for the current trick.
+    # Mastery is never checked during calibration: the child is jumping through levels
+    # rapidly and has not proven sustained correctness at any one difficulty level.
+    mastery_reached = (
+        False if calibration_active
+        else check_mastery(recent_performance, phase_counters["practice_problems_solved"])
     )
 
     # dict — {"phase_update": str or None, "trick_update": str or None}
@@ -234,4 +329,4 @@ def process_answer(
         current_phase, phase_counters, mastery_reached, current_trick, unlocked_tricks
     )
 
-    return build_adjuster_response(difficulty_result, phase_result)
+    return build_adjuster_response(difficulty_result, phase_result, updated_calibration)

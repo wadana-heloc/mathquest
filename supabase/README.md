@@ -60,7 +60,8 @@ supabase/
     ├── 0014_add_current_trick_to_children.sql
     ├── 0015_extend_trick_discoveries_phase_tracking.sql
     ├── 0016_create_problem_attempts.sql
-    └── 0017_add_difficulty_to_problem_attempts.sql
+    ├── 0017_add_difficulty_to_problem_attempts.sql
+    └── 0018_add_missing_tricks.sql
 ```
 
 ---
@@ -282,7 +283,7 @@ business data not in auth metadata (date_of_birth, avatar_id), and
 
 Source: [`migrations/0009_create_tricks.sql`](migrations/0009_create_tricks.sql).
 
-Static catalog of math shortcut tricks. Seeded with 17 codes at migration time; new tricks are added manually. Read-only from the client.
+Static catalog of math shortcut tricks. Seeded with 17 codes in migration 0009; 8 more added in migration 0018 (total 25). New tricks are added via migrations. Read-only from the client.
 
 | Column        | Type   | Notes |
 | ------------- | ------ | ----- |
@@ -291,7 +292,9 @@ Static catalog of math shortcut tricks. Seeded with 17 codes at migration time; 
 | `category`    | `text` | `multiplication \| mental_math \| number_theory \| pattern \| algebra \| sequences` |
 | `description` | `text` | One-sentence explanation of the shortcut. |
 
-Seeded codes: A1 (×11), A2 (×9), A3 (perfect squares), A5 (consecutive odds), A6 (diff of squares), A7 (×25), B1 (parity), B4 (modular arithmetic), B5 (div by 9), C1 (chunking), C2 (complement pairs), C3 (near-benchmark), C4 (near-doubles), C5 (×5 halving), C7 (grouping), D4 (geometric series), D5 (triangular numbers).
+**Original 17 (migration 0009):** A1 (×11), A2 (×9), A3 (perfect squares), A5 (consecutive odds), A6 (diff of squares), A7 (×25), B1 (parity), B4 (modular arithmetic), B5 (div by 9), C1 (chunking), C2 (complement pairs), C3 (near-benchmark), C4 (near-doubles), C5 (×5 halving), C7 (grouping), D4 (geometric series), D5 (triangular numbers).
+
+**Added 8 (migration 0018):** A4 (near-square identity), B2 (perimeter invariance), B3 (conservation of sum), B6 (pigeonhole principle), C6 (estimation and bounds), D1 (symmetry and half-double), D2 (state transitions), D3 (balance/equilibrium).
 
 ---
 

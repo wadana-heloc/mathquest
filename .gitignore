@@ -47,8 +47,11 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+
 MathQuest_Permissions_Matrix_v2.xlsx
 ERD-MathQuest.drawio
 MathQuest_TDD_v1.1.docx
 AGENTS.md
-docs/
+Tricks.md
+backend/lib-doc.md

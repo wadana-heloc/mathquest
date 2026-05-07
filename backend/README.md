@@ -84,6 +84,7 @@ cp .env.example .env
 #    - supabase/migrations/0015_extend_trick_discoveries_phase_tracking.sql
 #    - supabase/migrations/0016_create_problem_attempts.sql
 #    - supabase/migrations/0017_add_difficulty_to_problem_attempts.sql
+#    - supabase/migrations/0018_add_missing_tricks.sql
 
 # 5. Run
 uvicorn app.main:app --reload --port 8000
@@ -150,7 +151,7 @@ from `public.users` on every call — a parent token gets `403 forbidden_role`.
 
 | Method + path             | Auth  | Purpose |
 | ------------------------- | ----- | ------- |
-| `GET   /problems`         | child | Returns 1 AI-recommended problem matched to the child's current trick, phase, and difficulty. Falls back to up to 5 zone-based shuffled problems when the AI pipeline is unavailable. Answer and shortcut columns are never selected. May return `phase_signal: "reveal"` with an empty problem list when the child completes the discovery phase. |
+| `GET   /problems`         | child | Returns 1 AI-recommended problem matched to the child's current trick and difficulty. Candidate query uses `difficulty ≤ effective` (no grade filter). When the bank has no candidates, generates a new problem synchronously via the AI pipeline and returns it in the same request. Returns empty list if AI pipeline is unavailable. May return `phase_signal: "reveal"` with an empty problem list when the child completes the discovery phase. |
 | `POST  /problems/attempt` | child | Submit an answer. Verifies server-side. Awards coins (3×/1×/0.7×/0.5×/0.3× of base 10). Enforces 300-coin daily cap. Updates streak. Fires trick unlock at 3 insight detections. Upserts `problem_attempts`. Calls the difficulty adjuster to update `current_difficulty`, `current_phase`, and (when ready) `current_trick`. Returns `new_difficulty`, `phase_update`, `trick_advance` alongside the existing fields. |
 | `POST  /problems/hint`    | child | Request hint tier 1/2/3. Deducts cost (0/5/15 coins) before returning hint text. |
 
@@ -159,7 +160,7 @@ Key design notes:
 - Sessions are created implicitly on first attempt (`POST /problems/session` endpoint is TODO).
 - `insight_detected`: correct + `hint_level_used == 0` + `duration_ms < shortcut_time_threshold_ms`.
 - Coins and hint costs are separate DB writes; the daily cap is only enforced on the attempt path.
-- AI pipeline (`problem_recommender`, `difficulty_adjuster`) is imported directly as Python — no HTTP boundary. `_AI_AVAILABLE` flag enables graceful fallback when the pipeline is not importable.
+- AI pipeline (`problem_recommender`, `difficulty_adjuster`) is imported directly as Python — no HTTP boundary. `_AI_AVAILABLE` flag gates the recommender path; if the import fails, `GET /problems` returns an empty list (no zone-based fallback).
 
 Full flow diagrams: [../docs/problems-flow.md](../docs/problems-flow.md).
 

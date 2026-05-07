@@ -29,8 +29,8 @@ from `public.users` on every call — never trusted from the JWT.
 The AI pipeline modules (`problem_recommender.py`, `difficulty_adjuster.py`)
 live in `ai_agents/mathquest-questions-agent/` and are imported directly via
 `sys.path`. There is no HTTP boundary. The `_AI_AVAILABLE` flag is set at
-module load; if the import fails, all AI paths degrade gracefully to the
-fallback logic documented below.
+module load; if the import fails, `GET /problems` returns an empty list —
+there is no zone-based fallback.
 
 ---
 
@@ -39,7 +39,7 @@ fallback logic documented below.
 | Table | Purpose |
 |---|---|
 | `public.problems` | Problem catalog. Added columns: `grade` (int), `phase_tag` (text), `trick_id` (text FK → tricks). `answer`, `shortcut_path`, `shortcut_time_threshold_ms` are server-only — never SELECTed in client-facing queries. |
-| `public.tricks` | Static trick catalog (17 codes A1–D5). Seeded in migration 0009. |
+| `public.tricks` | Static trick catalog (25 codes A1–D5). 17 seeded in migration 0009, 8 added in 0018. |
 | `public.sessions` | One row per gameplay session. `id` is a client-generated UUID. |
 | `public.trick_discoveries` | Per-child insight count and unlock state per trick. Added columns: `current_phase`, `discovery_problems_seen`, `practice_problems_solved`, `practice_problems_attempted`. |
 | `public.children` | `coins`, `streak_current`, `streak_best`, `daily_coins_earned`, `daily_coins_reset_at`, `current_difficulty`, `current_trick` are mutated on each attempt. |
@@ -49,9 +49,7 @@ fallback logic documented below.
 
 ## GET /problems — fetch a problem
 
-**Auth:** child JWT. Query params: `zone` (optional), `difficulty` (optional override, 1–10), `exclude_ids` (optional UUID list).
-
-### Recommender path (when `_AI_AVAILABLE = True`)
+**Auth:** child JWT.
 
 ```
 Browser                       FastAPI                     Supabase
@@ -59,14 +57,15 @@ Browser                       FastAPI                     Supabase
 GET /problems
           │
           ├───► verify child JWT → get_current_user
+          │     (returns 200 { problems: [] } if _AI_AVAILABLE = False)
           │
           │     load user_row (role='child' check)
           │     load child_row (current_difficulty, difficulty_ceiling,
-          │                     current_trick, grade)
+          │                     current_trick, grade, date_of_birth)
           │     load parent_settings (difficulty_ceiling)
           │
           │     effective_difficulty = min(
-          │         difficulty override OR child.current_difficulty,
+          │         child.current_difficulty,
           │         child.difficulty_ceiling,
           │         parent.difficulty_ceiling
           │     )
@@ -87,16 +86,24 @@ GET /problems
           │                                 previously_failed) for child
           │     build solved_ids set (solved_correctly = true)
           │
-          │     SELECT id, zone, category, difficulty, stem,
-          │            answer_type, hints, flavor_text, tags,
-          │            phase_tag, trick_id
+          │     SELECT id, trick_id, difficulty, grade, phase_tag
           │     FROM public.problems
           │     WHERE trick_id = current_trick
-          │       AND difficulty = effective_difficulty
-          │       AND grade = child.grade
+          │       AND difficulty <= effective_difficulty   ← no grade filter
           │
           │     filter solved_ids in Python → candidates
           │     mark previously_failed on each candidate
+          │
+          │     ── Bank-empty: inline generation ─────────────────────
+          │     if candidates is empty:
+          │         await _refill_problem_bank(
+          │             child_row, {trick_id, difficulty, grade},
+          │             skip_if_count_gte=1   ← guard against concurrent calls
+          │         )
+          │         → runs AI pipeline synchronously (~20s, cold slot only)
+          │         → INSERT new problem, return its safe fields
+          │         if generated: increment disc_seen, return problem
+          │         else: return { problems: [] }
           │
           │     ── Recommender call ──────────────────────────────────
           │     recommend(child_ctx, candidates) →
@@ -107,56 +114,62 @@ GET /problems
           │         return { problems: [], phase_signal: "reveal" }
           │                                   ↑ triggers reveal animation
           │
-          │     if problem_id is None (no candidates):
-          │         fall through to fallback query below
-          │
           │     ── Post-selection updates ────────────────────────────
           │     if current_phase == 'discovery':
           │         UPDATE trick_discoveries
           │         SET discovery_problems_seen = discovery_problems_seen + 1
           │
-          │     if needs_refill:
-          │         background_tasks.add_task(_refill_problem_bank, ...)
+          │     if exact-difficulty slot is thin (no unseen at effective):
+          │         background_tasks.add_task(
+          │             _refill_problem_bank, child_row, refill_context,
+          │             skip_if_count_gte=2   ← prevents duplicate bg inserts
+          │         )
           │
           │     fetch full problem row → strip server-only fields
           │
           ◄─── 200 { problems: [ProblemResponse], phase_signal: null }
 ```
 
-### Fallback path (when `_AI_AVAILABLE = False` or no candidates found)
+### `_refill_problem_bank` — generate and insert a problem
+
+Used two ways:
+
+| Call site | Mode | `skip_if_count_gte` | Effect |
+|---|---|---|---|
+| Bank empty (inline) | `await` — blocks request | `1` — skip if ≥1 already exists | Child gets the new problem in same request |
+| Bank low (background) | `background_tasks.add_task` | `2` — skip if ≥2 exist | Response already sent; fills slot asynchronously |
 
 ```
-          │     SELECT id, zone, category, difficulty, stem,
-          │            answer_type, hints, flavor_text, tags
-          │     FROM public.problems
-          │     WHERE zone = ? AND difficulty <= effective_difficulty
-          │
-          │     filter exclude_ids in Python
-          │     shuffle → return first 5
-          │
-          ◄─── 200 { problems: [ProblemResponse, ...], phase_signal: null }
-```
-
-### Background refill task
-
-When `needs_refill = true`, a FastAPI `BackgroundTask` fires after the
-response is sent:
-
-```
-_refill_problem_bank(child_row, refill_context)
+_refill_problem_bank(child_row, refill_context, *, skip_if_count_gte)
     │
-    ├── import orchestrator lazily (lazy to avoid startup cost)
-    ├── orchestrator.run_pipeline(refill_context) → problem dict
-    └── INSERT INTO public.problems
-            (zone, category, difficulty, stem, answer, answer_type,
-             shortcut_path, shortcut_time_threshold_ms, hints,
-             flavor_text, tags, grade, phase_tag, trick_id)
-        VALUES (...)
-        -- AI string ID ("p_001") is ignored; DB generates a UUID
+    ├── if skip_if_count_gte > 0:
+    │       count existing problems for (trick_id, difficulty)
+    │       if count >= skip_if_count_gte → return None (skip)
+    │
+    ├── derive age from child.date_of_birth (if set)
+    │   else estimate: grade + 5
+    │
+    ├── import orchestrator.run_pipeline (lazy)
+    ├── build ChildProfileInput (grade, difficulty, unlocked_tricks, ...)
+    ├── run_pipeline(profile) → problem_dict
+    │
+    ├── INSERT INTO public.problems
+    │       (zone, category, difficulty, trick_id, trick_ids,
+    │        stem, answer, answer_type, shortcut_time_threshold_ms,
+    │        hints, aha_moment, flavor_text, tags, grade, phase_tag)
+    │   VALUES (...)
+    │   -- AI string ID ("p_001") ignored; DB generates UUID
+    │   -- difficulty forced to refill_context["difficulty"] (AI pipeline
+    │      may compute a different target; we override to fill the right slot)
+    │
+    └── returns dict with safe response fields (id, zone, category,
+        difficulty, stem, answer_type, hints, flavor_text, tags)
+        or None on failure / skip
 ```
 
 If the pipeline raises (network error, bad API key, etc.), the exception is
-logged and the existing problem bank continues to serve future requests.
+logged and None is returned. The inline path falls back to an empty response;
+the background path is a no-op.
 
 **ProblemResponse fields** (answer and shortcut fields never included):
 

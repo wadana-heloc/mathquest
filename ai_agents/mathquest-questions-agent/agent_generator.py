@@ -263,6 +263,6 @@ def generate_problem(
         # dict — parsed JSON problem object
         return json.loads(raw_text)
 
-    except Exception:
-        # Return None so the orchestrator can retry or fall back — never raise here
+    except Exception as exc:
+        print(f"[Agent1] failed: {type(exc).__name__}: {exc}")
         return None

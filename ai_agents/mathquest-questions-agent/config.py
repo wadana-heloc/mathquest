@@ -20,10 +20,10 @@ MODEL_NAME = "claude-sonnet-4-5"
 # ---------------------------------------------------------------------------
 
 # int — max tokens Agent 1 (Generator) may produce; one JSON object
-AGENT1_MAX_TOKENS = 600
+AGENT1_MAX_TOKENS = 1000
 
-# int — max tokens Agent 2 (Reviewer) may produce; one small approval JSON
-AGENT2_MAX_TOKENS = 300
+# int — max tokens Agent 2 (Reviewer) may produce; approval JSON or full corrected problem
+AGENT2_MAX_TOKENS = 1200
 
 
 # ---------------------------------------------------------------------------

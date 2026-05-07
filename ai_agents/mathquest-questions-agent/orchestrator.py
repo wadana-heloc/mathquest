@@ -79,8 +79,8 @@ def _load_fallback(trick_id: str, difficulty: int) -> dict:
 def run_pipeline(child_profile_input: ChildProfileInput) -> dict:
     # What: runs the full problem generation pipeline for one child request.
     #       Calls the difficulty engine, then Agent 1 and Agent 2 in sequence,
-    #       retrying up to MAX_RETRIES times before falling back to a pre-made problem.
-    #       Always returns a problem dict — never raises or returns None.
+    #       retrying up to MAX_RETRIES times.
+    #       Always returns a freshly generated problem — raises RuntimeError if all attempts fail.
     # Return: dict — a validated problem with internal fields stripped
     # Example input: ChildProfileInput with child age=8, current_difficulty=4, unlocked=["A1","A2"]
     # Example output: {"id": "p_001", "trick_id": "A1", "answer": 253, ...}
@@ -97,10 +97,9 @@ def run_pipeline(child_profile_input: ChildProfileInput) -> dict:
         child_profile_input.recent_problems,
     )
 
-    # str — first eligible trick used as the fallback key if all attempts fail
-    fallback_trick_id = eligible_tricks[0] if eligible_tricks else "A1"
-
     for attempt in range(MAX_RETRIES + 1):
+
+        print(f"[Pipeline] attempt {attempt + 1}/{MAX_RETRIES + 1}")
 
         # Wait before retrying — skip the delay on the first attempt
         if attempt > 0:
@@ -116,7 +115,10 @@ def run_pipeline(child_profile_input: ChildProfileInput) -> dict:
         )
 
         if raw_problem is None:
+            print("[Pipeline] Agent 1 returned None — retrying")
             continue
+
+        print("[Pipeline] Agent 1 returned a problem")
 
         # --- Pydantic validation ---
         # If Agent 1's output fails schema validation, skip Agent 2 entirely.
@@ -124,37 +126,33 @@ def run_pipeline(child_profile_input: ChildProfileInput) -> dict:
 
         try:
             # ProblemOutput — validated problem object; raises if any field is wrong
-            # **raw_problem unpacks the dict as keyword arguments: ProblemOutput(id=..., answer=..., ...)
-            # Pydantic matches each key to its field by name and validates the types.
-            # If a required field is missing or has the wrong type, it raises — caught below.
             validated_problem = ProblemOutput(**raw_problem)
-        except Exception:
+        except Exception as exc:
+            print(f"[Pipeline] Pydantic validation failed: {exc}")
             continue
+
+        print(f"[Pipeline] Pydantic validation passed (trick={validated_problem.trick_id}, difficulty={validated_problem.difficulty})")
 
         # --- Trick description lookup ---
         # Agent 2 needs the description of the specific trick used to check alignment.
 
         # dict or None — full trick object from the reference, keyed by trick_id
-        # _TRICKS_BY_ID is a dict: {"A1": {trick object}, "A2": {trick object}, ...}
-        # .get(trick_id) looks up the trick the problem used so Agent 2 can verify
-        # that the problem actually requires that trick. Returns None if not found.
         trick_description = _TRICKS_BY_ID.get(validated_problem.trick_id)
 
         if trick_description is None:
+            print(f"[Pipeline] unknown trick_id '{validated_problem.trick_id}' — retrying")
             continue
 
         # --- Agent 2: review the problem ---
 
         # dict or None — ReviewerOutput JSON from Agent 2, or None on failure
-        # model_dump() converts the Pydantic object back to a plain dict so it can
-        # be passed to review_problem(). After Pydantic validation the dict is
-        # guaranteed clean — all required fields present, all types correct.
         raw_review = review_problem(
             validated_problem.model_dump(),
             trick_description,
         )
 
         if raw_review is None:
+            print("[Pipeline] Agent 2 returned None — retrying")
             continue
 
         # --- Parse and act on the reviewer's verdict ---
@@ -162,19 +160,23 @@ def run_pipeline(child_profile_input: ChildProfileInput) -> dict:
         try:
             # ReviewerOutput — validated reviewer response; raises if malformed
             reviewer_output = ReviewerOutput(**raw_review)
-        except Exception:
+        except Exception as exc:
+            print(f"[Pipeline] ReviewerOutput validation failed: {exc}")
             continue
 
         if reviewer_output.approved:
-            # Problem passed all checks — strip internal fields and return
+            print("[Pipeline] Agent 2 approved — returning problem")
             return _strip_internal_fields(validated_problem.model_dump())
 
         if reviewer_output.corrected_problem is not None:
-            # Agent 2 rejected but supplied a corrected version — use it directly.
-            # It has already been reviewed so no second review pass is needed.
+            print(f"[Pipeline] Agent 2 rejected but supplied correction — returning corrected problem. Issues: {reviewer_output.issues}")
             return _strip_internal_fields(reviewer_output.corrected_problem.model_dump())
 
+        print(f"[Pipeline] Agent 2 rejected with no correction — retrying. Issues: {reviewer_output.issues}")
         # Agent 2 rejected with no correction — loop will retry if attempts remain
 
-    # All attempts exhausted — serve a guaranteed-correct pre-made problem
-    return _load_fallback(fallback_trick_id, difficulty_target)
+    # All attempts exhausted — generation failed
+    raise RuntimeError(
+        f"Problem generation failed after {MAX_RETRIES + 1} attempts "
+        f"(difficulty_target={difficulty_target}, eligible_tricks={eligible_tricks})"
+    )

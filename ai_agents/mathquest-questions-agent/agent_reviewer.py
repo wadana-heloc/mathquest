@@ -193,6 +193,6 @@ def review_problem(problem: dict, trick_description: dict) -> dict | None:
         # dict — parsed ReviewerOutput JSON
         return json.loads(raw_text)
 
-    except Exception:
-        # Return None so the orchestrator can fall back — never raise here
+    except Exception as exc:
+        print(f"[Agent2] failed: {type(exc).__name__}: {exc}")
         return None

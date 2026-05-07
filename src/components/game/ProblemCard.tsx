@@ -479,6 +479,7 @@ export function ProblemCard({
       try {
         const result = await submitAnswer({
           problem_id: problem.id,
+          backend_id: problem.backend_id,
           answer,
           duration_ms,
           hint_level_used: hintLevel,
@@ -486,20 +487,29 @@ export function ProblemCard({
           difficulty,
         })
 
+        console.log('[ProblemCard][submitAnswer] result:', result)
+
         if (result.correct) {
-          flashDelta(result.coins_delta)
+          if (result.coins_delta > 0) flashDelta(result.coins_delta)
 
           if (result.insight_detected) {
             setCardState('insight')
-            setFeedbackMsg(`✦ Insight! +${result.coins_delta} coins`)
+            setFeedbackMsg(
+              result.daily_cap_reached
+                ? '✦ Insight! Daily coin limit reached'
+                : `✦ Insight! +${result.coins_delta} coins`
+            )
             onInsight(result)
           } else {
             setCardState('correct')
-            setFeedbackMsg(`Correct! +${result.coins_delta} coins`)
-            // onCorrect(result)
+            setFeedbackMsg(
+              result.daily_cap_reached
+                ? 'Correct! Daily coin limit reached 🔒'
+                : `Correct! +${result.coins_delta} coins`
+            )
             onCorrect({
               ...result,
-              hint_level_used: hintLevel // ✅ FIX
+              hint_level_used: hintLevel,
             })
           }
 
@@ -554,6 +564,7 @@ export function ProblemCard({
       try {
         const result = await requestHint({
           problem_id: problem.id,
+          backend_id: problem.backend_id,
           hint_level: nextLevel,
           session_id: sessionId,
         })

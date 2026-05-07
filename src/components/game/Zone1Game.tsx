@@ -16,10 +16,15 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ProblemCard } from '@/components/game/ProblemCard'
+import { TricksModal } from '@/components/game/TricksModal'
+import { InsightCelebration } from '@/components/game/InsightCelebration'
 import { fetchProblems, updateStreak, advanceZone } from '@/lib/game/actions'
 import type { Problem, AttemptResult, HintResult } from '@/types/game'
 import { ZONE1_EVENTS } from '@/lib/phaser/Zone1Scene'
 import { useChildProfile } from '@/lib/hooks/useChildProfile'
+
+// Dummy discovered trick IDs — replace with real data later
+const DUMMY_DISCOVERED = ['A1', 'A2', 'A4', 'B4', 'B5', 'C6', 'D2', 'D3']
 
 //
 interface ProblemTrigger {
@@ -152,26 +157,49 @@ function BossHUD({ phase, visible }: { phase: number; visible: boolean }) {
   )
 }
 
-function CoinStreak({ coins, sessionCoins, streak }: { coins: number; sessionCoins: number; streak: number }) {
+function CoinStreak({ coins, sessionCoins, streak, capReached, onTricks, tricksCount }: {
+  coins: number; sessionCoins: number; streak: number
+  capReached?: boolean
+  onTricks?: () => void
+  tricksCount?: number
+}) {
   return (
-    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex gap-2 select-none pointer-events-none">
+    <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex gap-2 select-none">
       {/* Total balance */}
-      <div className="flex items-center gap-2 bg-black/50 backdrop-blur-sm border border-yellow-500/20 rounded-full px-4 py-2">
-        <div className="w-4 h-4 rounded-full bg-yellow-400 flex-shrink-0" />
-        <span className="text-yellow-400 font-black text-sm tabular-nums">{coins}</span>
+      <div className={`pointer-events-none flex items-center gap-2 bg-black/50 backdrop-blur-sm rounded-full px-4 py-2 border ${capReached ? 'border-white/20' : 'border-yellow-500/20'}`}>
+        <div className={`w-4 h-4 rounded-full flex-shrink-0 ${capReached ? 'bg-white/30' : 'bg-yellow-400'}`} />
+        <span className={`font-black text-sm tabular-nums ${capReached ? 'text-white/40' : 'text-yellow-400'}`}>{coins}</span>
+        {capReached && <span className="text-white/40 text-xs font-bold">🔒</span>}
       </div>
-      {/* Session earnings — only shown once the player earns something */}
+      {/* Session earnings */}
       {sessionCoins > 0 && (
-        <div className="flex items-center gap-1.5 bg-black/50 backdrop-blur-sm border border-emerald-400/30 rounded-full px-3 py-2">
+        <div className="pointer-events-none flex items-center gap-1.5 bg-black/50 backdrop-blur-sm border border-emerald-400/30 rounded-full px-3 py-2">
           <span className="text-emerald-400 font-black text-xs tabular-nums">+{sessionCoins}</span>
           <span className="text-white/40 text-[10px] font-bold">session</span>
         </div>
       )}
       {/* Streak */}
-      <div className="flex items-center gap-2 bg-black/50 backdrop-blur-sm border border-orange-400/20 rounded-full px-4 py-2">
+      <div className="pointer-events-none flex items-center gap-2 bg-black/50 backdrop-blur-sm border border-orange-400/20 rounded-full px-4 py-2">
         <span>🔥</span>
         <span className="text-orange-300 font-black text-sm tabular-nums">{streak}</span>
       </div>
+      {/* Tricks */}
+      {onTricks && (
+        <button
+          type="button"
+          onClick={onTricks}
+          className="relative flex items-center gap-1.5 bg-black/50 hover:bg-yellow-400/15 backdrop-blur-sm border border-yellow-400/25 hover:border-yellow-400/50 text-yellow-300 rounded-full px-4 py-2 transition-all duration-150 active:scale-90"
+          aria-label="View math tricks"
+        >
+          <span className="text-sm leading-none">✨</span>
+          <span className="font-black text-sm">Tricks</span>
+          {!!tricksCount && (
+            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-yellow-400 text-[#1A1A2E] text-[9px] font-black flex items-center justify-center">
+              {tricksCount}
+            </span>
+          )}
+        </button>
+      )}
     </div>
   )
 }
@@ -204,7 +232,7 @@ function ObstacleBadge({ label, type }: { label: string; type: 'obstacle' | 'bos
 }
 
 function MathModal({
-  trigger, problem, coins, streak, difficulty,
+  trigger, problem, coins, streak, difficulty, sessionId,
   onCorrect, onInsight, onHintUsed,
   onCorrectClose, onWrongClose, onWrong,
 }: {
@@ -213,6 +241,7 @@ function MathModal({
   coins: number
   streak: number
   difficulty?: number
+  sessionId: string
   onCorrect: (r: AttemptResult) => void
   onInsight: (r: AttemptResult) => void
   onHintUsed: (r: HintResult) => void
@@ -240,7 +269,7 @@ function MathModal({
 
         <ProblemCard
           problem={problem}
-          sessionId="zone1-session"
+          sessionId={sessionId}
           difficulty={difficulty}
           currentCoins={coins}
           currentStreak={streak}
@@ -322,6 +351,7 @@ export default function Zone1Game({ difficulty }: { difficulty?: number } = {}) 
   // Reset in dismissModal() — after the modal is fully gone — so the
   // next problem always starts with a clean slate.
   const answerDispatchedRef = useRef(false)
+  const sessionIdRef = useRef(crypto.randomUUID())
 
   // Obstacle IDs that received at least one wrong answer. Persists across
   // modal open/close so returning to an obstacle and answering correctly
@@ -343,9 +373,15 @@ export default function Zone1Game({ difficulty }: { difficulty?: number } = {}) 
   const [sessionCoins, setSessionCoins] = useState(0)
   const [streak, setStreak] = useState(0)
 
-  // Seed coins and streak from DB profile once loaded
+  // Seed coins and streak from DB profile ONCE on initial load only.
+  // We intentionally ignore subsequent profile changes here because the
+  // realtime subscription in useChildProfile can fire with stale DB data
+  // if the backend hasn't committed the coin write yet, which would
+  // overwrite the optimistic update from handleCorrect/handleHintUsed.
+  const profileSeededRef = useRef(false)
   useEffect(() => {
-    if (profile) {
+    if (profile && !profileSeededRef.current) {
+      profileSeededRef.current = true
       setCoins(profile.coins)
       setStreak(profile.streak)
     }
@@ -359,6 +395,10 @@ export default function Zone1Game({ difficulty }: { difficulty?: number } = {}) 
   const [zoneComplete, setZoneComplete] = useState(false)
   // Show touch controls if on a mobile device
   const [showControls, setShowControls] = useState(false)
+  const [showTricks, setShowTricks] = useState(false)
+  const [capReached, setCapReached] = useState(false)
+  const [showInsight, setShowInsight] = useState(false)
+  const insightResultRef = useRef<AttemptResult | null>(null)
 
   activeTriggerRef.current = activeTrigger
 
@@ -373,7 +413,7 @@ export default function Zone1Game({ difficulty }: { difficulty?: number } = {}) 
         const map = new Map<string, Problem>()
         list.forEach(p => map.set(p.id, p))
         problemsRef.current = map
-        console.log('[Zone1] Problems loaded:', Array.from(map.keys()))
+        console.log('zone1Game: [Zone1] Problems loaded:', Array.from(map.keys()))
       })
       .catch(err => console.error('[Zone1] fetchProblems error:', err))
   }, [])
@@ -483,19 +523,18 @@ export default function Zone1Game({ difficulty }: { difficulty?: number } = {}) 
 
   // ── Correct answer ────────────────────────────────────────
   const handleCorrect = useCallback((result: AttemptResult) => {
-    // Update coins and streak based on the result returned from the server. We have to use the ref to get the current active trigger since this function can be called after the player has already triggered another problem, and we want to make sure we send the answer result back to the correct obstacle in Phaser.
     const trigger = activeTriggerRef.current
+    console.log('[Zone1][handleCorrect] trigger=', !!trigger, '| new_coin_balance=', result.new_coin_balance, '| coins_delta=', result.coins_delta, '| insight=', result.insight_detected)
     if (!trigger) return
-    // Update local state for coins, streak, and progress. The server response includes the new coin balance and how much it changed, so we can update both the total coins and the session coins earned from this play session. We also check if this obstacle had a previous wrong attempt to determine whether to reset the streak or increment it.
+    if (result.daily_cap_reached) setCapReached(true)
     setCoins(result.new_coin_balance)
     setSessionCoins(s => s + result.coins_delta)
-    if (wrongObstaclesRef.current.has(trigger.obstacleId)) {
-      setStreak(0)
-      updateStreak(false).catch(() => {})
-    } else {
-      setStreak(s => s + 1)
+    // Use streak_count from the backend response — authoritative value.
+    // Only fire STREAK_INCREASE when the obstacle had no prior wrong attempt
+    // (first-try correct = clean streak increment, not a recovery).
+    setStreak(result.streak_count)
+    if (!wrongObstaclesRef.current.has(trigger.obstacleId)) {
       window.dispatchEvent(new CustomEvent(ZONE1_EVENTS.STREAK_INCREASE))
-      updateStreak(true).catch(() => {})
     }
     
     setProgress(prev => {
@@ -506,9 +545,17 @@ export default function Zone1Game({ difficulty }: { difficulty?: number } = {}) 
     dismissModal()
   }, [sendAnswer, dismissModal])
 
-  // ── Insight detected — treat as correct but with a special celebration ──
+  // ── Insight detected — show celebration, then complete as correct ────────
   const handleInsight = useCallback((result: AttemptResult) => {
-    handleCorrect(result)
+    insightResultRef.current = result
+    setShowInsight(true)
+  }, [])
+
+  const handleInsightDone = useCallback(() => {
+    setShowInsight(false)
+    const result = insightResultRef.current
+    insightResultRef.current = null
+    if (result) handleCorrect(result)
   }, [handleCorrect])
 
   // ── Hint used — update coins based on hint cost ───────────
@@ -516,11 +563,12 @@ export default function Zone1Game({ difficulty }: { difficulty?: number } = {}) 
     setCoins(result.new_coin_balance)
   }, [])
 
-  // Called by ProblemCard's onNextProblem — after correct answer,
-  // handleCorrect already ran so sendAnswer is a no-op, dismissModal
-  // is called a second time which is also a no-op (state already null)
+  // Called by ProblemCard's onNextProblem 1200ms after a correct answer.
+  // Guard: if a new obstacle was triggered in that window, activeTriggerRef
+  // will be non-null — skip the dismiss so we don't close the new modal
+  // (which would leave Phaser blocked with no ANSWER_RESULT → freeze).
   const handleCorrectClose = useCallback(() => {
-    dismissModal()
+    if (!activeTriggerRef.current) dismissModal()
   }, [dismissModal])
 
   // ── ✕ button pressed ─────────────────────────────────────
@@ -544,7 +592,7 @@ export default function Zone1Game({ difficulty }: { difficulty?: number } = {}) 
       <ProgressHUD solved={progress.solved} total={progress.total} />
       <BossHUD phase={bossPhase} visible={bossVisible} />
 
-      <CoinStreak coins={coins} sessionCoins={sessionCoins} streak={streak} />
+      <CoinStreak coins={coins} sessionCoins={sessionCoins} streak={streak} capReached={capReached} onTricks={() => setShowTricks(true)} tricksCount={DUMMY_DISCOVERED.length} />
       
       {/* Back to hub
       {!activeTrigger && (
@@ -561,6 +609,7 @@ export default function Zone1Game({ difficulty }: { difficulty?: number } = {}) 
       {!activeTrigger && <TouchControls visible={showControls} />}
       {!showControls && !activeTrigger && <KeyboardHint />}
 
+
       {activeTrigger && activeProblem && (
         <MathModal
           trigger={activeTrigger}
@@ -568,6 +617,7 @@ export default function Zone1Game({ difficulty }: { difficulty?: number } = {}) 
           coins={coins}
           streak={streak}
           difficulty={difficulty}
+          sessionId={sessionIdRef.current}
           onCorrect={handleCorrect}
           onInsight={handleInsight}
           onHintUsed={handleHintUsed}
@@ -577,11 +627,25 @@ export default function Zone1Game({ difficulty }: { difficulty?: number } = {}) 
         />
       )}
 
+      {showInsight && (
+        <InsightCelebration
+          coins_delta={insightResultRef.current?.coins_delta ?? 0}
+          onDone={handleInsightDone}
+        />
+      )}
+
       {zoneComplete && (
         <ZoneCompleteScreen
           onNext={() => { window.location.href = '/game/zone/2' }}
           onHub={() => router.push('/game')}
           sessionCoins={sessionCoins}
+        />
+      )}
+
+      {showTricks && (
+        <TricksModal
+          discoveredTrickIds={DUMMY_DISCOVERED}
+          onClose={() => setShowTricks(false)}
         />
       )}
     </div>

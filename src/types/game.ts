@@ -26,7 +26,8 @@ export interface Hint {
 
 // ── Problem sent to client (answer field intentionally absent) ─
 export interface Problem {
-  id: string
+  id: string                  // formatted ID used by Phaser scene (e.g. Z2-OBJ-01)
+  backend_id?: string         // real UUID from backend DB — used when submitting answers
   zone: Zone
   category: ProblemCategory
   difficulty: number          // 1–10
@@ -42,6 +43,7 @@ export interface Problem {
 // ── Attempt the client POSTs to server ───────────────────────
 export interface AttemptPayload {
   problem_id: string
+  backend_id?: string       // UUID from backend — takes precedence over problem_id
   answer: number | string   // string for answer_type='set' (e.g. 'odd', 'yes')
   duration_ms: number
   hint_level_used: 0 | 1 | 2 | 3
@@ -55,12 +57,13 @@ export interface AttemptResult {
   insight_detected: boolean
   new_coin_balance: number
   hint_level_used: 0 | 1 | 2 | 3
+  streak_count: number        // authoritative streak from backend
+  daily_cap_reached: boolean  // true when daily coin limit hit
   trick_unlock?: {
     trick_id: TrickId
     trick_name: string
-    coins_awarded: number   // +75 first-time unlock
-     hint_level_used?: number
-     
+    coins_awarded: number
+    hint_level_used?: number
   }
 }
 

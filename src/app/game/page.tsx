@@ -264,6 +264,10 @@ import { LogoutButton } from "@/components/game/LogoutModal";
 import { SettingsButton } from "@/components/game/SettingsModal";
 import { StoryButton } from "@/components/game/StoryModal";
 import { AudioControls, loadAudioSettings, AUDIO_EVENT, type AudioSettings } from "@/components/game/AudioControlModal";
+import { TricksButton } from "@/components/game/TricksModal";
+
+// Dummy discovered trick IDs — replace with real data from player profile later
+const DUMMY_DISCOVERED = ['A1', 'A2', 'A4', 'B4', 'B5', 'C6', 'D2', 'D3'];
 
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -659,6 +663,7 @@ export default function GamePage() {
       </div>
       <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
         <AudioControls />
+        <TricksButton discoveredTrickIds={DUMMY_DISCOVERED} />
         <StoryButton />
         <LogoutButton />
       </div>

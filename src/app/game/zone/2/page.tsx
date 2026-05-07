@@ -1,5 +1,5 @@
-// src/app/game/zone/1/page.tsx
-// Route: /game/zone/1
+// src/app/game/zone/2/page.tsx
+// Route: /game/zone/2
 // Dynamic import keeps Phaser out of SSR bundle
 
 import dynamic from 'next/dynamic'
@@ -9,14 +9,14 @@ const Zone2Game = dynamic(
   {
     ssr: false,
     loading: () => (
-      <div className="w-screen h-screen bg-[#1a6ec7] flex items-center justify-center">
+      <div className="w-screen h-screen bg-[#04021A] flex items-center justify-center">
         <div className="text-center">
-          <div className="text-6xl mb-6 animate-bounce">🛖</div>
-          <p className="text-white/80 text-xl font-bold tracking-wide mb-3">
-            Echo Caves…
+          <div className="text-6xl mb-6 animate-bounce">🦇</div>
+          <p className="text-purple-200/80 text-xl font-bold tracking-wide mb-3">
+            Loading Echo Caves…
           </p>
-          <div className="w-48 h-2 bg-white/20 rounded-full mx-auto overflow-hidden">
-            <div className="h-full bg-teal-400 rounded-full animate-[loading_1.5s_ease-in-out_infinite]" />
+          <div className="w-48 h-2 bg-purple-900/40 rounded-full mx-auto overflow-hidden">
+            <div className="h-full bg-purple-400 rounded-full animate-[loading_1.5s_ease-in-out_infinite]" />
           </div>
         </div>
 
@@ -32,6 +32,11 @@ const Zone2Game = dynamic(
   }
 )
 
-export default function Zone2Page() {
-  return <Zone2Game />
+export default function Zone2Page({
+  searchParams,
+}: {
+  searchParams: { difficulty?: string }
+}) {
+  const difficulty = searchParams.difficulty ? parseInt(searchParams.difficulty, 10) : undefined
+  return <Zone2Game difficulty={difficulty} />
 }

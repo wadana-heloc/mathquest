@@ -2,205 +2,163 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
+import { apiGet, apiPost, apiPatch } from '@/lib/api/client'
+import type { Problem, AttemptResult, HintResult, Zone, ProblemCategory, Hint } from '@/types/game'
 
-import type { Problem, AttemptResult, HintResult, Zone, ProblemCategory, TrickId, Hint } from '@/types/game'
+// ─────────────────────────────────────────────────────────────────────────────
+// Backend API response shapes
+// ─────────────────────────────────────────────────────────────────────────────
 
-const lastAttemptTime = new Map<string, number>()
+interface ApiHintItem { level: number; text: string; cost: number }
 
-const RATE_LIMIT_MS = 3000
-
-// ─── Phaser ID helpers ────────────────────────────────────────────────────────
-
-const objId  = (zone: number, i: number) => `Z${zone}-OBJ-${String(i + 1).padStart(2, '0')}`
-const bossId = (zone: number, i: number) => `Z${zone}-BOSS-${String(i + 1).padStart(2, '0')}`
-
-function parseProblemId(id: string): { zone: number; type: 'OBJ' | 'BOSS'; idx: number } | null {
-  const m = id.match(/^Z(\d+)-(OBJ|BOSS)-(\d+)$/)
-  if (!m) return null
-  return { zone: Number(m[1]), type: m[2] as 'OBJ' | 'BOSS', idx: Number(m[3]) - 1 }
-}
-
-// ─── DB row → client Problem ──────────────────────────────────────────────────
-
-type DbProblemRow = {
+interface ApiProblem {
+  id: string
   zone: number
   category: string
   difficulty: number
-  trick_ids: string[] | null
   stem: string
-  shortcut_time_threshold_ms: number | null
-  hints: unknown
+  answer_type: string
+  hints: ApiHintItem[]
   flavor_text: string | null
-  tags: string[] | null
-  answer_type: 'exact' | 'range' | 'set'
+  tags: string[]
 }
 
-function toClientProblem(row: DbProblemRow, id: string): Problem {
-  const trickIds = row.trick_ids ?? []
-  return {
-    id,
-    zone: row.zone as Zone,
-    category: row.category as ProblemCategory,
-    difficulty: row.difficulty,
-    trick_id: trickIds.length === 0
-      ? null
-      : trickIds.length === 1
-        ? (trickIds[0] as TrickId)
-        : (trickIds as TrickId[]),
-    stem: row.stem,
-    shortcut_time_threshold_ms: row.shortcut_time_threshold_ms ?? 5000,
-    hints: (row.hints as Hint[]) ?? [],
-    flavor_text: row.flavor_text ?? '',
-    tags: row.tags ?? [],
-    answer_type: row.answer_type ?? 'exact',
-  }
+interface ProblemsListResponse {
+  problems: ApiProblem[]
+  phase_signal: string | null
 }
 
-// ─── Helper: get child's current coins from DB (admin read, bypasses RLS) ───
-
-async function getChildCoins(userId: string): Promise<number> {
-  const admin = createAdminClient()
-  const { data, error } = await admin
-    .from('children')
-    .select('coins')
-    .eq('user_id', userId)
-    .single()
-  if (error || !data) return 0
-  return (data as { coins: number }).coins
+interface AttemptResponse {
+  correct: boolean
+  coins_awarded: number
+  insight_detected: boolean
+  new_balance: number
+  streak_count: number
+  trick_unlocked: string | null
+  daily_cap_reached: boolean
+  new_difficulty: number
+  phase_update: string | null
+  trick_advance: string | null
 }
 
-// ─── Helper: set child's coins in DB (admin write, bypasses RLS) ─────────────
-
-async function setChildCoins(userId: string, coins: number): Promise<number> {
-  const admin = createAdminClient()
-  const clamped = Math.max(0, coins)
-  const { data, error } = await admin
-    .from('children')
-    .update({ coins: clamped })
-    .eq('user_id', userId)
-    .select('coins')
-    .single()
-  if (error || !data) return clamped
-  return (data as { coins: number }).coins
+interface HintApiResponse {
+  hint_text: string
+  cost_paid: number
+  new_balance: number
 }
 
-// ─── 1. Fetch problems for a zone ─────────────────────────────────────────────
+interface StreakResponse {
+  streak_current: number
+  streak_best: number
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Phaser ID helpers  (Z2-OBJ-01, Z2-BOSS-01, …)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const objId = (zone: number, i: number) => `Z${zone}-OBJ-${String(i + 1).padStart(2, '0')}`
+const bossId = (zone: number, i: number) => `Z${zone}-BOSS-${String(i + 1).padStart(2, '0')}`
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 1. Fetch problems for a zone
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchProblems(zone: number, difficulty?: number): Promise<Problem[]> {
-  const supabase = await createClient()
-  let q = supabase
-    .from('problems')
-    .select(
-      'zone, category, difficulty, trick_ids, stem, shortcut_time_threshold_ms, hints, flavor_text, tags, answer_type'
-    )
-    .eq('zone', zone)
-    .order('difficulty', { ascending: true })
+  const params = new URLSearchParams({ zone: String(zone) })
+  // Pass difficulty=10 when none is specified so the backend's
+  // lte("difficulty", effective) filter returns all zone problems,
+  // not just those at or below the child's current_difficulty.
+  params.set('difficulty', String(difficulty ?? 10))
 
-  if (difficulty !== undefined) q = q.eq('difficulty', difficulty)
+  const data = await apiGet<ProblemsListResponse>(`/problems?${params}`)
 
-  const { data, error } = await q
+  console.log(`[fetchProblems] Fetched ${data.problems.length} problems for zone=${zone}, difficulty_lte=${params.get('difficulty')}`)
+  console.log(`3333 data.problems: ${JSON.stringify(data.problems, null, 2)}`)
 
-  if (error || !data || data.length === 0) return []
+  if (!data.problems.length) {
+    console.error(`[fetchProblems] API returned empty for zone=${zone}. Ensure the problems table has seeded data.`)
+    return []
+  }
 
   const OBSTACLE_SLOTS = 8
-  const BOSS_SLOTS     = 3
+  const BOSS_SLOTS = 3
   const result: Problem[] = []
 
   for (let i = 0; i < OBSTACLE_SLOTS; i++) {
-    result.push(toClientProblem(data[i % data.length] as DbProblemRow, objId(zone, i)))
+    const p = data.problems[i % data.problems.length]
+    result.push({
+      id: objId(zone, i),
+      backend_id: p.id,
+      zone: p.zone as Zone,
+      category: p.category as ProblemCategory,
+      difficulty: p.difficulty,
+      trick_id: null,
+      stem: p.stem,
+      shortcut_time_threshold_ms: 5000,
+      hints: p.hints as Hint[],
+      flavor_text: p.flavor_text ?? '',
+      tags: p.tags,
+      answer_type: p.answer_type as 'exact' | 'range' | 'set',
+    })
   }
-  const hardest = [...data].sort((a, b) => b.difficulty - a.difficulty)
+
+  const hardest = [...data.problems].sort((a, b) => b.difficulty - a.difficulty)
   for (let i = 0; i < BOSS_SLOTS; i++) {
-    result.push(toClientProblem(hardest[i % hardest.length] as DbProblemRow, bossId(zone, i)))
+    const p = hardest[i % hardest.length]
+    result.push({
+      id: bossId(zone, i),
+      backend_id: p.id,
+      zone: p.zone as Zone,
+      category: p.category as ProblemCategory,
+      difficulty: p.difficulty,
+      trick_id: null,
+      stem: p.stem,
+      shortcut_time_threshold_ms: 5000,
+      hints: p.hints as Hint[],
+      flavor_text: p.flavor_text ?? '',
+      tags: p.tags,
+      answer_type: p.answer_type as 'exact' | 'range' | 'set',
+    })
   }
 
   return result
 }
 
-// ─── 2. Submit an answer ──────────────────────────────────────────────────────
-// Reads the answer from the DB (server-only column), calculates coins,
-// writes the new balance to children via the admin client (bypasses RLS),
-// and returns the real new balance so the UI always mirrors the DB.
+// ─────────────────────────────────────────────────────────────────────────────
+// 2. Submit an answer
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function submitAnswer(payload: {
   problem_id: string
+  backend_id?: string
   answer: number | string
   duration_ms: number
   hint_level_used: 0 | 1 | 2 | 3
   session_id: string
   difficulty?: number
 }): Promise<AttemptResult> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Not authenticated')
-  const userId = user.id
-
-  // Rate-limit per user
-  const now = Date.now()
-  const last = lastAttemptTime.get(userId) ?? 0
-  if (now - last < RATE_LIMIT_MS) throw new Error('Rate limited — wait before submitting again')
-  lastAttemptTime.set(userId, now)
-
-  const parsed = parseProblemId(payload.problem_id)
-  if (!parsed) throw new Error(`Unrecognised problem ID: ${payload.problem_id}`)
-
-  // Fetch the answer row (server-only column, regular client with anon key is
-  // fine because the problems table allows authenticated SELECT).
-  // Apply the same difficulty filter used in fetchProblems so idx mapping stays correct.
-  let answerQ = supabase
-    .from('problems')
-    .select('answer, shortcut_time_threshold_ms, difficulty')
-    .eq('zone', parsed.zone)
-    .order('difficulty', { ascending: true })
-
-  if (payload.difficulty !== undefined) answerQ = answerQ.eq('difficulty', payload.difficulty)
-
-  const { data, error } = await answerQ
-
-  if (error || !data || data.length === 0) throw new Error('Problem not found in DB')
-
-  const dbRow = parsed.type === 'OBJ'
-    ? data[parsed.idx % data.length]
-    : [...data].sort((a, b) => b.difficulty - a.difficulty)[parsed.idx % data.length]
-
-  const correct =
-    String(payload.answer).toLowerCase().trim() === String(dbRow.answer).toLowerCase().trim()
-
-  // Always read authoritative balance from DB
-  const currentBalance = await getChildCoins(userId)
-
-  if (!correct) {
-    return {
-      correct: false,
-      coins_delta: 0,
-      insight_detected: false,
-      new_coin_balance: currentBalance,
-      hint_level_used: payload.hint_level_used,
-    }
-  }
-
-  const threshold = (dbRow.shortcut_time_threshold_ms as number | null) ?? 5000
-  const insight_detected = payload.hint_level_used === 0 && payload.duration_ms < threshold
-
-  let coins_delta = 0
-  if      (payload.hint_level_used === 0) coins_delta = insight_detected ? 30 : 10
-  else if (payload.hint_level_used === 1) coins_delta = 7
-  else if (payload.hint_level_used === 2) coins_delta = 4
-  else                                    coins_delta = 1
-
-  // Write to DB via admin client — bypasses RLS
-  const new_coin_balance = await setChildCoins(userId, currentBalance + coins_delta)
+  const data = await apiPost<AttemptResponse>('/problems/attempt', {
+    problem_id: payload.backend_id ?? payload.problem_id,
+    answer: String(payload.answer),
+    duration_ms: payload.duration_ms,
+    hint_level_used: payload.hint_level_used,
+    session_id: payload.session_id,
+  })
 
   return {
-    correct: true,
-    coins_delta,
-    insight_detected,
-    new_coin_balance,
+    correct: data.correct,
+    coins_delta: data.coins_awarded,
+    insight_detected: data.insight_detected,
+    new_coin_balance: data.new_balance,
     hint_level_used: payload.hint_level_used,
+    streak_count: data.streak_count,
+    daily_cap_reached: data.daily_cap_reached,
   }
 }
 
-// ─── 3. Advance current zone ──────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────────
+// 3. Advance current zone — no backend endpoint, Supabase only
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function advanceZone(completedZone: number): Promise<void> {
   const supabase = await createClient()
@@ -217,7 +175,6 @@ export async function advanceZone(completedZone: number): Promise<void> {
   if (!child) throw new Error('Child profile not found')
 
   const current = (child as { id: string; current_zone: number }).current_zone
-  // Only advance if the DB zone hasn't already been updated past this zone
   if (current <= completedZone) {
     await admin
       .from('children')
@@ -226,81 +183,35 @@ export async function advanceZone(completedZone: number): Promise<void> {
   }
 }
 
-// ─── 4. Update streak ─────────────────────────────────────────────────────────
-// Increments streak on correct answer, resets to 0 on wrong answer.
-// Returns the new streak values after the DB write.
+// ─────────────────────────────────────────────────────────────────────────────
+// 4. Update streak
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function updateStreak(
   correct: boolean,
 ): Promise<{ streak_current: number; streak_best: number }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Not authenticated')
-
-  const admin = createAdminClient()
-  const { data: child } = await admin
-    .from('children')
-    .select('id, streak_current, streak_best')
-    .eq('user_id', user.id)
-    .single()
-
-  if (!child) throw new Error('Child profile not found')
-
-  const cur  = (child as { id: string; streak_current: number; streak_best: number }).streak_current
-  const best = (child as { id: string; streak_current: number; streak_best: number }).streak_best
-  const id   = (child as { id: string; streak_current: number; streak_best: number }).id
-
-  const newCurrent = correct ? cur + 1 : 0
-  const newBest    = correct ? Math.max(best, newCurrent) : best
-
-  await admin
-    .from('children')
-    .update({ streak_current: newCurrent, streak_best: newBest })
-    .eq('id', id)
-
-  return { streak_current: newCurrent, streak_best: newBest }
+  return apiPatch<StreakResponse>('/child/streak', { correct })
 }
 
-// ─── 4. Request a hint ────────────────────────────────────────────────────────
-// Free hints (level 1) cost 0 coins. Paid hints deduct immediately from DB.
+// ─────────────────────────────────────────────────────────────────────────────
+// 5. Request a hint
+// ─────────────────────────────────────────────────────────────────────────────
 
 export async function requestHint(payload: {
   problem_id: string
+  backend_id?: string
   hint_level: 1 | 2 | 3
   session_id: string
 }): Promise<HintResult> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) throw new Error('Not authenticated')
-  const userId = user.id
+  const data = await apiPost<HintApiResponse>('/problems/hint', {
+    problem_id: payload.backend_id ?? payload.problem_id,
+    hint_level: payload.hint_level,
+    session_id: payload.session_id,
+  })
 
-  const parsed = parseProblemId(payload.problem_id)
-  if (!parsed) throw new Error(`Unrecognised problem ID: ${payload.problem_id}`)
-
-  const { data, error } = await supabase
-    .from('problems')
-    .select('hints, difficulty')
-    .eq('zone', parsed.zone)
-    .order('difficulty', { ascending: true })
-
-  if (error || !data || data.length === 0) throw new Error('Problem not found in DB')
-
-  const row = parsed.type === 'OBJ'
-    ? data[parsed.idx % data.length]
-    : [...data].sort((a, b) => b.difficulty - a.difficulty)[parsed.idx % data.length]
-
-  const hints = (row.hints as Array<{ level: number; text: string; cost: number }>) ?? []
-  const hint  = hints.find(h => h.level === payload.hint_level)
-  if (!hint) throw new Error(`Hint level ${payload.hint_level} not found`)
-
-  const currentBalance = await getChildCoins(userId)
-
-  if (hint.cost > 0) {
-    // Deduct and persist via admin client — bypasses RLS
-    const new_coin_balance = await setChildCoins(userId, currentBalance - hint.cost)
-    return { hint_text: hint.text, coin_cost: hint.cost, new_coin_balance }
+  return {
+    hint_text: data.hint_text,
+    coin_cost: data.cost_paid,
+    new_coin_balance: data.new_balance,
   }
-
-  // Free hint — no DB write needed
-  return { hint_text: hint.text, coin_cost: 0, new_coin_balance: currentBalance }
 }

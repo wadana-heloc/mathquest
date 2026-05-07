@@ -818,3 +818,514 @@ export default function WelcomePage() {
     </>
   );
 }
+
+
+// "use client";
+
+// import { useEffect, useRef, useState } from "react";
+// import Link from "next/link";
+// import dynamic from "next/dynamic";
+// import { useUser } from "@/lib/hooks/useUser";
+
+// const MathParticles = dynamic(
+//   () => import("@/components/phaser/MathParticles"),
+//   { ssr: false }
+// );
+
+// function useCounter(target: number, duration: number, start: boolean) {
+//   const [value, setValue] = useState(0);
+
+//   useEffect(() => {
+//     if (!start) return;
+
+//     let startTime: number | null = null;
+
+//     const step = (timestamp: number) => {
+//       if (!startTime) startTime = timestamp;
+
+//       const progress = Math.min((timestamp - startTime) / duration, 1);
+//       const eased = 1 - Math.pow(1 - progress, 3);
+
+//       setValue(Math.floor(eased * target));
+
+//       if (progress < 1) requestAnimationFrame(step);
+//     };
+
+//     requestAnimationFrame(step);
+//   }, [target, duration, start]);
+
+//   return value;
+// }
+
+// function HeroMark() {
+//   return (
+//     <svg width="80" height="80" viewBox="0 0 80 80" fill="none">
+//       <path
+//         d="M40 4 L74 22 L74 58 L40 76 L6 58 L6 22 Z"
+//         stroke="#FFD166"
+//         strokeWidth="1.5"
+//         fill="rgba(255,209,102,0.12)"
+//       />
+
+//       <path
+//         d="M40 16 L60 40 L40 64 L20 40 Z"
+//         stroke="#4ECDC4"
+//         strokeWidth="1"
+//         fill="rgba(78,205,196,0.15)"
+//       />
+
+//       <path
+//         d="M40 28 L52 40 L40 52 L28 40 Z"
+//         stroke="#9D4EDD"
+//         strokeWidth="1"
+//         fill="rgba(157,78,221,0.18)"
+//       />
+
+//       <circle cx="40" cy="40" r="6" fill="#FFD166" />
+//     </svg>
+//   );
+// }
+
+// function FloatingBadge({
+//   symbol,
+//   x,
+//   y,
+//   color,
+//   size,
+//   delay,
+// }: {
+//   symbol: string;
+//   x: string;
+//   y: string;
+//   color: string;
+//   size: string;
+//   delay: string;
+// }) {
+//   return (
+//     <div
+//       className="absolute pointer-events-none select-none font-display font-black opacity-20"
+//       style={{
+//         left: x,
+//         top: y,
+//         color,
+//         fontSize: size,
+//         animation: `floatBadge 6s ease-in-out infinite`,
+//         animationDelay: delay,
+//       }}
+//     >
+//       {symbol}
+//     </div>
+//   );
+// }
+
+// function ZoneCard({
+//   title,
+//   description,
+//   color,
+// }: {
+//   title: string;
+//   description: string;
+//   color: string;
+// }) {
+//   return (
+//     <div
+//       className="rounded-3xl p-6 border transition-all duration-300 hover:-translate-y-2"
+//       style={{
+//         background:
+//           "linear-gradient(135deg, rgba(255,255,255,0.92) 0%, rgba(245,243,255,0.95) 100%)",
+//         borderColor: `${color}30`,
+//         boxShadow: "0 12px 40px rgba(108,99,255,0.08)",
+//         backdropFilter: "blur(12px)",
+//       }}
+//     >
+//       <div
+//         className="w-12 h-12 rounded-2xl mb-4 flex items-center justify-center text-white font-black"
+//         style={{ background: color }}
+//       >
+//         ✦
+//       </div>
+
+//       <h3 className="font-display font-black text-slate-800 text-xl mb-2">
+//         {title}
+//       </h3>
+
+//       <p className="text-slate-500 font-body text-sm leading-relaxed">
+//         {description}
+//       </p>
+//     </div>
+//   );
+// }
+
+// function StatBlock({
+//   target,
+//   label,
+//   color,
+//   start,
+// }: {
+//   target: number;
+//   label: string;
+//   color: string;
+//   start: boolean;
+// }) {
+//   const value = useCounter(target, 1800, start);
+
+//   return (
+//     <div className="flex flex-col items-center gap-2">
+//       <span
+//         className="font-display font-black text-5xl"
+//         style={{ color }}
+//       >
+//         {value}
+//       </span>
+
+//       <span className="text-slate-500 uppercase tracking-widest text-xs">
+//         {label}
+//       </span>
+//     </div>
+//   );
+// }
+
+// export default function WelcomePage() {
+//   const [visible, setVisible] = useState(false);
+//   const [statsVisible, setStatsVisible] = useState(false);
+
+//   const statsRef = useRef<HTMLDivElement>(null);
+
+//   const { user } = useUser();
+
+//   useEffect(() => {
+//     const t = setTimeout(() => setVisible(true), 100);
+
+//     return () => clearTimeout(t);
+//   }, []);
+
+//   useEffect(() => {
+//     const observer = new IntersectionObserver(
+//       ([entry]) => {
+//         if (entry.isIntersecting) {
+//           setStatsVisible(true);
+//         }
+//       },
+//       { threshold: 0.3 }
+//     );
+
+//     if (statsRef.current) observer.observe(statsRef.current);
+
+//     return () => observer.disconnect();
+//   }, []);
+
+//   return (
+//     <>
+//       <style>{`
+//         @keyframes floatBadge {
+//           0%, 100% { transform: translateY(0px) rotate(-3deg); }
+//           50% { transform: translateY(-18px) rotate(3deg); }
+//         }
+
+//         @keyframes pulseGlow {
+//           0%, 100% {
+//             transform: scale(1);
+//             box-shadow: 0 0 0 rgba(255,209,102,0.4);
+//           }
+
+//           50% {
+//             transform: scale(1.03);
+//             box-shadow: 0 0 40px rgba(255,209,102,0.35);
+//           }
+//         }
+//       `}</style>
+
+//       <div
+//         className="relative min-h-screen overflow-hidden"
+//         style={{
+//           background: `
+//             radial-gradient(circle at top left,
+//               rgba(255,209,102,0.25),
+//               transparent 30%),
+
+//             radial-gradient(circle at top right,
+//               rgba(78,205,196,0.20),
+//               transparent 30%),
+
+//             radial-gradient(circle at bottom center,
+//               rgba(157,78,221,0.15),
+//               transparent 40%),
+
+//             linear-gradient(
+//               180deg,
+//               #F8F9FF 0%,
+//               #EEF2FF 100%
+//             )
+//           `,
+//         }}
+//       >
+//         <MathParticles />
+
+//         {/* floating symbols */}
+//         <div className="absolute inset-0 overflow-hidden pointer-events-none">
+//           <FloatingBadge
+//             symbol="×"
+//             x="10%"
+//             y="20%"
+//             color="#FFD166"
+//             size="5rem"
+//             delay="0s"
+//           />
+
+//           <FloatingBadge
+//             symbol="π"
+//             x="80%"
+//             y="15%"
+//             color="#4ECDC4"
+//             size="4rem"
+//             delay="1s"
+//           />
+
+//           <FloatingBadge
+//             symbol="∞"
+//             x="70%"
+//             y="70%"
+//             color="#9D4EDD"
+//             size="4rem"
+//             delay="2s"
+//           />
+
+//           <FloatingBadge
+//             symbol="√"
+//             x="20%"
+//             y="75%"
+//             color="#FF6B6B"
+//             size="4rem"
+//             delay="3s"
+//           />
+//         </div>
+
+//         {/* navbar */}
+//         <nav
+//           className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-6 py-4"
+//           style={{
+//             background: "rgba(255,255,255,0.7)",
+//             backdropFilter: "blur(16px)",
+//             borderBottom: "1px solid rgba(108,99,255,0.08)",
+//           }}
+//         >
+//           <div className="flex items-center gap-3">
+//             <HeroMark />
+
+//             <span className="font-display font-black text-2xl text-slate-800">
+//               Math<span className="text-violet">Quest</span>
+//             </span>
+//           </div>
+
+//           <div className="flex items-center gap-4">
+//             <Link
+//               href="/login"
+//               className="text-slate-600 hover:text-primary transition-colors"
+//             >
+//               Login
+//             </Link>
+
+//             <Link
+//               href="/signup"
+//               className="px-5 py-3 rounded-2xl font-display font-black text-primary transition-all duration-300 hover:-translate-y-1"
+//               style={{
+//                 background:
+//                   "linear-gradient(135deg, #FFD166 0%, #FFB703 100%)",
+//                 boxShadow: "0 10px 24px rgba(255,209,102,0.35)",
+//               }}
+//             >
+//               Play Free
+//             </Link>
+//           </div>
+//         </nav>
+
+//         {/* hero */}
+//         <section className="relative z-10 min-h-screen flex flex-col items-center justify-center text-center px-6">
+
+//           <div
+//             className="absolute w-[500px] h-[500px] rounded-full blur-3xl opacity-40"
+//             style={{
+//               background:
+//                 "radial-gradient(circle, rgba(255,209,102,0.4), transparent 70%)",
+//             }}
+//           />
+
+//           <div
+//             style={{
+//               opacity: visible ? 1 : 0,
+//               transform: visible ? "translateY(0)" : "translateY(40px)",
+//               transition: "all 1s ease",
+//             }}
+//           >
+//             <div
+//               className="inline-flex items-center gap-2 px-5 py-2 rounded-full mb-8"
+//               style={{
+//                 background: "rgba(255,255,255,0.7)",
+//                 backdropFilter: "blur(12px)",
+//               }}
+//             >
+//               <span className="text-gold">✨</span>
+
+//               <span className="uppercase tracking-widest text-xs text-slate-600">
+//                 A Magical Math Adventure
+//               </span>
+//             </div>
+
+//             <h1
+//               className="font-display font-black leading-none mb-6"
+//               style={{
+//                 fontSize: "clamp(4rem, 12vw, 9rem)",
+//                 letterSpacing: "-0.05em",
+//                 background:
+//                   "linear-gradient(135deg, #6C63FF 0%, #9D4EDD 40%, #4ECDC4 100%)",
+//                 WebkitBackgroundClip: "text",
+//                 WebkitTextFillColor: "transparent",
+//               }}
+//             >
+//               MathQuest
+//             </h1>
+
+//             <p className="max-w-2xl mx-auto text-slate-600 text-lg md:text-2xl leading-relaxed">
+//               Explore magical lands, solve puzzles, defeat bosses,
+//               and unlock amazing math powers.
+//             </p>
+
+//             <div className="flex flex-col sm:flex-row gap-4 justify-center mt-10">
+//               <Link
+//                 href="/signup"
+//                 className="px-10 py-5 rounded-3xl font-display font-black text-primary text-xl hover:-translate-y-1 transition-all duration-300"
+//                 style={{
+//                   background:
+//                     "linear-gradient(135deg, #FFD166 0%, #FFB703 100%)",
+//                   animation: "pulseGlow 3s ease-in-out infinite",
+//                 }}
+//               >
+//                 Start Adventure →
+//               </Link>
+
+//               <Link
+//                 href="/login"
+//                 className="px-10 py-5 rounded-3xl font-display font-bold text-slate-700 text-xl border border-violet/20 bg-white/70 backdrop-blur-xl hover:-translate-y-1 transition-all duration-300"
+//               >
+//                 I Have an Account
+//               </Link>
+//             </div>
+//           </div>
+//         </section>
+
+//         {/* stats */}
+//         <section
+//           ref={statsRef}
+//           className="relative z-10 py-24 px-6"
+//         >
+//           <div className="max-w-5xl mx-auto grid grid-cols-2 md:grid-cols-4 gap-10">
+//             <StatBlock
+//               target={25}
+//               label="Math Powers"
+//               color="#FFD166"
+//               start={statsVisible}
+//             />
+
+//             <StatBlock
+//               target={100}
+//               label="Challenges"
+//               color="#4ECDC4"
+//               start={statsVisible}
+//             />
+
+//             <StatBlock
+//               target={5}
+//               label="Worlds"
+//               color="#9D4EDD"
+//               start={statsVisible}
+//             />
+
+//             <StatBlock
+//               target={12}
+//               label="Bosses"
+//               color="#FF6B6B"
+//               start={statsVisible}
+//             />
+//           </div>
+//         </section>
+
+//         {/* zones */}
+//         <section className="relative z-10 py-20 px-6">
+//           <div className="max-w-6xl mx-auto">
+
+//             <div className="text-center mb-16">
+//               <p className="uppercase tracking-widest text-violet text-sm mb-4">
+//                 Explore Worlds
+//               </p>
+
+//               <h2 className="font-display font-black text-5xl text-slate-800 mb-6">
+//                 Magical Math Lands
+//               </h2>
+
+//               <p className="text-slate-500 max-w-2xl mx-auto text-lg">
+//                 Each world teaches a different mathematical superpower.
+//               </p>
+//             </div>
+
+//             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+//               <ZoneCard
+//                 title="Pebble Shore"
+//                 description="Learn arithmetic and discover magical number patterns."
+//                 color="#4ECDC4"
+//               />
+
+//               <ZoneCard
+//                 title="Echo Caves"
+//                 description="Master multiplication and unlock hidden shortcuts."
+//                 color="#9D4EDD"
+//               />
+
+//               <ZoneCard
+//                 title="Iron Summit"
+//                 description="Face giant bosses with powerful math strategies."
+//                 color="#FF6B6B"
+//               />
+//             </div>
+//           </div>
+//         </section>
+
+//         {/* final CTA */}
+//         <section className="relative z-10 py-32 px-6 text-center">
+//           <div className="max-w-4xl mx-auto">
+
+//             <h2 className="font-display font-black text-6xl text-slate-800 leading-tight mb-8">
+//               Math is your{" "}
+//               <span
+//                 style={{
+//                   background:
+//                     "linear-gradient(135deg, #FFD166, #FF6B6B, #9D4EDD)",
+//                   WebkitBackgroundClip: "text",
+//                   WebkitTextFillColor: "transparent",
+//                 }}
+//               >
+//                 superpower
+//               </span>
+//             </h2>
+
+//             <p className="text-slate-500 text-xl max-w-2xl mx-auto mb-10">
+//               Begin your magical journey and become the greatest
+//               math explorer in the kingdom.
+//             </p>
+
+//             <Link
+//               href="/signup"
+//               className="inline-flex items-center gap-3 px-12 py-6 rounded-3xl font-display font-black text-primary text-2xl hover:-translate-y-1 transition-all duration-300"
+//               style={{
+//                 background:
+//                   "linear-gradient(135deg, #FFD166 0%, #FFB703 100%)",
+//                 boxShadow: "0 20px 40px rgba(255,209,102,0.35)",
+//               }}
+//             >
+//               Play Free →
+//             </Link>
+//           </div>
+//         </section>
+//       </div>
+//     </>
+//   );
+// }

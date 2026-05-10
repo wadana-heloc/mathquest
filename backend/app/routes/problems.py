@@ -358,7 +358,7 @@ async def _refill_problem_bank(
                 )
                 return None
 
-        child_grade: int = child_row.get("grade", refill_context.get("grade", 3))
+        child_grade: int = child_row.get("grade", 3)
         unlocked = _fetch_unlocked_tricks(child_row["id"], admin)
 
         dob = child_row.get("date_of_birth")
@@ -420,7 +420,7 @@ async def _refill_problem_bank(
                 current_zone=child_row.get("current_zone", 1),
                 current_difficulty=refill_context["difficulty"],
                 difficulty_ceiling=child_row.get("difficulty_ceiling", 10),
-                unlocked_tricks=unlocked or [refill_context["trick_id"]],
+                unlocked_tricks=[refill_context["trick_id"]],
                 session_stats=SessionStats(
                     problems_solved_today=0,
                     current_streak=child_row.get("streak_current", 0),
@@ -449,8 +449,6 @@ async def _refill_problem_bank(
                 "tags": problem_dict.get("tags", []),
                 "estimated_brute_force_seconds": problem_dict.get("estimated_brute_force_seconds"),
                 "estimated_trick_seconds": problem_dict.get("estimated_trick_seconds"),
-                "grade": child_grade,
-                "phase_tag": "practice",
             }
         ).execute()
 
@@ -676,7 +674,7 @@ async def get_problems(
 
     candidates_res = (
         admin.table("problems")
-        .select("id, trick_id, difficulty, grade, phase_tag")
+        .select("id, trick_id, difficulty")
         .eq("trick_id", current_trick)
         .eq("difficulty", effective)
         .execute()
@@ -686,16 +684,16 @@ async def get_problems(
             "id": str(r["id"]),
             "trick_id": r["trick_id"],
             "difficulty": r["difficulty"],
-            "grade": r["grade"] or child_row["grade"],
-            "phase_tag": r["phase_tag"] or "practice",
+            "grade": child_row["grade"],  # grade removed from problems table; use child's grade
+            "phase_tag": current_phase,   # phase_tag removed from problems table; use child's current phase
             "previously_failed": str(r["id"]) in failed_ids,
         }
         for r in (candidates_res.data or [])
         if str(r["id"]) not in solved_ids
     ]
     logger.debug(
-        "candidates: trick=%s difficulty=%d child_grade=%d found=%d",
-        current_trick, effective, child_row["grade"], len(candidates),
+        "candidates: trick=%s difficulty=%d found=%d",
+        current_trick, effective, len(candidates),
     )
 
     child_ctx = {

@@ -109,6 +109,11 @@ class InsufficientCoins(APIError):
     code = "insufficient_coins"
 
 
+class TrickNotFound(APIError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "trick_not_found"
+
+
 # --- Parent / child management -----------------------------------------------
 
 

@@ -38,11 +38,13 @@ backend/
 │   │   ├── auth.py         # /auth/signup, /auth/login, /auth/logout, /auth/me
 │   │   ├── child.py        # /child/me, /child/streak
 │   │   ├── parent.py       # /parent/children, /parent/settings
-│   │   └── problems.py     # /problems, /problems/attempt, /problems/hint
+│   │   ├── problems.py     # /problems, /problems/attempt, /problems/hint
+│   │   └── tricks.py       # /tricks, /tricks/{trick_id}
 │   ├── schemas/
 │   │   ├── auth.py         # Pydantic request/response models for /auth/*
 │   │   ├── parent.py       # Pydantic request/response models for /parent/* and /child/*
-│   │   └── problems.py     # Pydantic request/response models for /problems/*
+│   │   ├── problems.py     # Pydantic request/response models for /problems/*
+│   │   └── tricks.py       # Pydantic request/response models for /tricks/*
 │   └── models/
 │       └── user.py         # SQLAlchemy User — documentation-only mirror of public.users
 └── tests/
@@ -163,6 +165,17 @@ Key design notes:
 - AI pipeline (`problem_recommender`, `difficulty_adjuster`) is imported directly as Python — no HTTP boundary. `_AI_AVAILABLE` flag gates the recommender path; if the import fails, `GET /problems` returns an empty list (no zone-based fallback).
 
 Full flow diagrams: [../docs/problems-flow.md](../docs/problems-flow.md).
+
+## /tricks endpoints
+
+All `/tricks/*` endpoints require a **child** bearer token. A parent token gets `403 forbidden_role`.
+
+| Method + path           | Auth  | Purpose |
+| ----------------------- | ----- | ------- |
+| `GET /tricks`           | child | Return all 17 tricks from `public.tricks`, ordered by `id` (`A1`…`D5`). |
+| `GET /tricks/{trick_id}`| child | Return a single trick by its code (e.g. `A1`). Returns `404 trick_not_found` if the ID doesn't exist. |
+
+Response shape for both (single row): `{ id, name, category, description }`.
 
 ## Security rules of the road
 

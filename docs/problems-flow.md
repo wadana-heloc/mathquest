@@ -72,7 +72,7 @@ GET /problems
           │
           │     ── Trick assignment ──────────────────────────────────
           │     if child.current_trick IS NULL:
-          │         get_eligible_tricks(child_ctx) → first eligible trick
+          │         get_eligible_tricks(unlocked_tricks) → first eligible trick
           │         ensure trick_discoveries row exists (INSERT if missing)
           │         UPDATE children SET current_trick = <trick_id>
           │
@@ -84,67 +84,56 @@ GET /problems
           │     ── Candidate selection ───────────────────────────────
           │     fetch all problem_attempts (problem_id, solved_correctly,
           │                                 previously_failed) for child
-          │     build solved_ids set (solved_correctly = true)
+          │     build solved_ids set  (solved_correctly = true)
+          │     build failed_ids set  (previously_failed = true)
           │
           │     SELECT id, trick_id, difficulty, grade, phase_tag
           │     FROM public.problems
-          │     WHERE trick_id = current_trick
-          │       AND difficulty <= effective_difficulty   ← no grade filter
+          │     WHERE trick_id  = current_trick
+          │       AND difficulty = effective_difficulty   ← exact match
+          │       AND grade      = child.grade            ← grade filter
           │
-          │     filter solved_ids in Python → candidates
+          │     exclude solved_ids → candidates
           │     mark previously_failed on each candidate
-          │
-          │     ── Bank-empty: inline generation ─────────────────────
-          │     if candidates is empty:
-          │         await _refill_problem_bank(
-          │             child_row, {trick_id, difficulty, grade},
-          │             skip_if_count_gte=1   ← guard against concurrent calls
-          │         )
-          │         → runs AI pipeline synchronously (~20s, cold slot only)
-          │         → INSERT new problem, return its safe fields
-          │         if generated: increment disc_seen, return problem
-          │         else: return { problems: [] }
           │
           │     ── Recommender call ──────────────────────────────────
           │     recommend(child_ctx, candidates) →
           │         { problem_id, needs_refill, refill_context, phase_signal }
+          │
+          │     recommend() owns all decisions:
+          │         • which problem to serve
+          │         • when to show the trick reveal (phase_signal = "reveal")
+          │         • when the bank needs a refill (needs_refill = true)
+          │
+          │     ── Act on recommend() response ───────────────────────
           │
           │     if phase_signal == "reveal":
           │         UPDATE trick_discoveries SET current_phase = 'practice'
           │         return { problems: [], phase_signal: "reveal" }
           │                                   ↑ triggers reveal animation
           │
-          │     ── Post-selection updates ────────────────────────────
-          │     if current_phase == 'discovery':
-          │         UPDATE trick_discoveries
-          │         SET discovery_problems_seen = discovery_problems_seen + 1
+          │     if needs_refill and refill_context:
+          │         background_tasks.add_task(_refill_problem_bank, ...)
+          │         ← non-blocking; response still goes out immediately
           │
-          │     if exact-difficulty slot is thin (no unseen at effective):
-          │         background_tasks.add_task(
-          │             _refill_problem_bank, child_row, refill_context,
-          │             skip_if_count_gte=2   ← prevents duplicate bg inserts
-          │         )
-          │
-          │     fetch full problem row → strip server-only fields
+          │     if problem_id is set:
+          │         fetch full problem row → strip server-only fields
+          │         if current_phase == 'discovery':
+          │             UPDATE trick_discoveries
+          │             SET discovery_problems_seen = discovery_problems_seen + 1
+          │         return { problems: [ProblemResponse], phase_signal: null }
           │
           ◄─── 200 { problems: [ProblemResponse], phase_signal: null }
+              or 200 { problems: [], phase_signal: "reveal" }
+              or 200 { problems: [] }   ← bank empty; refill queued in background
 ```
 
 ### `_refill_problem_bank` — generate and insert a problem
 
-Used two ways:
-
-| Call site | Mode | `skip_if_count_gte` | Effect |
-|---|---|---|---|
-| Bank empty (inline) | `await` — blocks request | `1` — skip if ≥1 already exists | Child gets the new problem in same request |
-| Bank low (background) | `background_tasks.add_task` | `2` — skip if ≥2 exist | Response already sent; fills slot asynchronously |
+Always called as a **background task** — never blocks the request.
 
 ```
-_refill_problem_bank(child_row, refill_context, *, skip_if_count_gte)
-    │
-    ├── if skip_if_count_gte > 0:
-    │       count existing problems for (trick_id, difficulty)
-    │       if count >= skip_if_count_gte → return None (skip)
+_refill_problem_bank(child_row, refill_context)
     │
     ├── derive age from child.date_of_birth (if set)
     │   else estimate: grade + 5
@@ -159,17 +148,13 @@ _refill_problem_bank(child_row, refill_context, *, skip_if_count_gte)
     │        hints, aha_moment, flavor_text, tags, grade, phase_tag)
     │   VALUES (...)
     │   -- AI string ID ("p_001") ignored; DB generates UUID
-    │   -- difficulty forced to refill_context["difficulty"] (AI pipeline
-    │      may compute a different target; we override to fill the right slot)
+    │   -- trick_id and difficulty come from refill_context (exact slot)
     │
-    └── returns dict with safe response fields (id, zone, category,
-        difficulty, stem, answer_type, hints, flavor_text, tags)
-        or None on failure / skip
+    └── logs success or failure; returns None on error (no-op)
 ```
 
 If the pipeline raises (network error, bad API key, etc.), the exception is
-logged and None is returned. The inline path falls back to an empty response;
-the background path is a no-op.
+logged and the function returns None — no impact on the child's session.
 
 **ProblemResponse fields** (answer and shortcut fields never included):
 

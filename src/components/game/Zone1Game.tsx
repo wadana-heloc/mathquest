@@ -18,7 +18,7 @@ import { useRouter } from 'next/navigation'
 import { ProblemCard } from '@/components/game/ProblemCard'
 import { TricksModal } from '@/components/game/TricksModal'
 import { InsightCelebration } from '@/components/game/InsightCelebration'
-import { fetchProblems, updateStreak, advanceZone } from '@/lib/game/actions'
+import { fetchProblem, updateStreak, advanceZone } from '@/lib/game/actions'
 import type { Problem, AttemptResult, HintResult } from '@/types/game'
 import { ZONE1_EVENTS } from '@/lib/phaser/Zone1Scene'
 import { useChildProfile } from '@/lib/hooks/useChildProfile'
@@ -232,7 +232,7 @@ function ObstacleBadge({ label, type }: { label: string; type: 'obstacle' | 'bos
 }
 
 function MathModal({
-  trigger, problem, coins, streak, difficulty, sessionId,
+  trigger, problem, coins, streak, sessionId,
   onCorrect, onInsight, onHintUsed,
   onCorrectClose, onWrongClose, onWrong,
 }: {
@@ -240,7 +240,6 @@ function MathModal({
   problem: Problem
   coins: number
   streak: number
-  difficulty?: number
   sessionId: string
   onCorrect: (r: AttemptResult) => void
   onInsight: (r: AttemptResult) => void
@@ -270,7 +269,6 @@ function MathModal({
         <ProblemCard
           problem={problem}
           sessionId={sessionId}
-          difficulty={difficulty}
           currentCoins={coins}
           currentStreak={streak}
           onCorrect={onCorrect}
@@ -332,10 +330,33 @@ function ZoneCompleteScreen({ onNext, onHub, sessionCoins }: { onNext: () => voi
 }
 
 // ─────────────────────────────────────────────────────────────
+//  Trick discovered card (phase_signal reveal)
+// ─────────────────────────────────────────────────────────────
+
+function TrickDiscoveredCard({ signal, onDismiss }: { signal: string; onDismiss: () => void }) {
+  return (
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+      <div className="w-full max-w-sm mx-4 bg-violet-950/90 border border-violet-400/40 rounded-2xl p-8 text-center shadow-2xl shadow-violet-900/40 animate-[slideUp_0.3s_ease_forwards]">
+        <div className="text-5xl mb-4">✨</div>
+        <h2 className="text-2xl font-black text-white mb-2">Discovered Trick!</h2>
+        <p className="text-violet-300 text-sm mb-6">{signal}</p>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="bg-violet-500 hover:bg-violet-400 active:scale-95 text-white font-black text-lg px-10 py-3 rounded-xl transition-all duration-150"
+        >
+          Got it!
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
 //  Main component
 // ─────────────────────────────────────────────────────────────
 
-export default function Zone1Game({ difficulty }: { difficulty?: number } = {}) {
+export default function Zone1Game() {
 
   // Refs for Phaser integration and game state that doesn't need to trigger React re-renders
   const canvasRef = useRef<HTMLDivElement>(null)// Ref to Phaser game instance so we can call methods on it without causing re-renders
@@ -358,6 +379,7 @@ export default function Zone1Game({ difficulty }: { difficulty?: number } = {}) 
   // still counts as a broken streak.
   //save the IDs of obstacles that the player has attempted and gotten wrong, so we can show a warning if they try to answer it again and prevent them from getting coins for it until they get it right. This encourages players to learn from their mistakes rather than just spamming answers, while still allowing them to eventually earn coins for previously failed obstacles if they keep trying.
   const wrongObstaclesRef = useRef<Set<string>>(new Set())
+  const phaseSignalsRef   = useRef<Map<string, string>>(new Map())
 
   // Get profile for coins, streak, etc.
   const { profile } = useChildProfile()
@@ -369,6 +391,7 @@ export default function Zone1Game({ difficulty }: { difficulty?: number } = {}) 
   const [activeTrigger, setActiveTrigger] = useState<ProblemTrigger | null>(null)
 // Active problem is stored in React state since it directly controls whether the modal is shown and what content it has.
   const [activeProblem, setActiveProblem] = useState<Problem | null>(null)
+  const [phaseSignal,   setPhaseSignal]   = useState<string | null>(null)
   const [coins, setCoins] = useState(0)
   const [sessionCoins, setSessionCoins] = useState(0)
   const [streak, setStreak] = useState(0)
@@ -406,17 +429,6 @@ export default function Zone1Game({ difficulty }: { difficulty?: number } = {}) 
     setShowControls('ontouchstart' in window || navigator.maxTouchPoints > 0)
   }, [])
 
-  // ── Load problems ─────────────────────────────────────────
-  useEffect(() => {
-    fetchProblems(1, difficulty)
-      .then(list => {
-        const map = new Map<string, Problem>()
-        list.forEach(p => map.set(p.id, p))
-        problemsRef.current = map
-        console.log('zone1Game: [Zone1] Problems loaded:', Array.from(map.keys()))
-      })
-      .catch(err => console.error('[Zone1] fetchProblems error:', err))
-  }, [])
 
   // ── Boot Phaser ───────────────────────────────────────────
   useEffect(() => {
@@ -448,29 +460,34 @@ export default function Zone1Game({ difficulty }: { difficulty?: number } = {}) 
   useEffect(() => {
     const onShowProblem = (e: Event) => {
       const data = (e as CustomEvent<ProblemTrigger>).detail
-      console.log('[Zone1] SHOW_PROBLEM:', data.problemId)
-      // Note: answerDispatchedRef is already false here because
-      // dismissModal() reset it when the previous modal closed.
 
-      const tryOpen = (retriesLeft: number) => {
-        const problem = problemsRef.current.get(data.problemId)
-        if (problem) {
-          setActiveTrigger(data)
-          setActiveProblem(problem)
-          return
-        }
-        // If the problem isn't loaded yet, wait a bit and retry. This can happen if the player hits an obstacle before the fetchProblems call completes. We want to handle this gracefully rather than just showing a blank modal or breaking the game.
-        if (retriesLeft <= 0) {
-          console.error('[Zone1] Problem not found:', data.problemId, '| loaded:', Array.from(problemsRef.current.keys()))
-          // Unblock Phaser so the game doesn't freeze
+      // Serve cached problem (same problem shown if player revisits obstacle).
+      const cached = problemsRef.current.get(data.obstacleId)
+      if (cached) { setActiveTrigger(data); setActiveProblem(cached); return }
+
+      // Serve cached phase signal (trick already discovered for this obstacle).
+      const cachedSignal = phaseSignalsRef.current.get(data.obstacleId)
+      if (cachedSignal) { setActiveTrigger(data); setPhaseSignal(cachedSignal); return }
+
+      // First collision — fetch from backend.
+      fetchProblem()
+        .then(({ problem, phase_signal }) => {
+          if (problem) {
+            problemsRef.current.set(data.obstacleId, problem)
+            setActiveTrigger(data)
+            setActiveProblem(problem)
+          } else if (phase_signal) {
+            phaseSignalsRef.current.set(data.obstacleId, phase_signal)
+            setActiveTrigger(data)
+            setPhaseSignal(phase_signal)
+          } else {
+            dispatchToPhaser(ZONE1_EVENTS.ANSWER_RESULT, { correct: false, obstacleId: data.obstacleId })
+          }
+        })
+        .catch(err => {
+          console.error('[Zone1] fetchProblem error:', err)
           dispatchToPhaser(ZONE1_EVENTS.ANSWER_RESULT, { correct: false, obstacleId: data.obstacleId })
-          return
-        }
-        
-        setTimeout(() => tryOpen(retriesLeft - 1), 300)
-      }
-      // Problems should be loaded by the time the player hits the first obstacle, but if not, retry a few times before giving up and unblocking Phaser.
-      tryOpen(6)
+        })
     }
 
     const onProgress = (e: Event) => { const d = (e as CustomEvent).detail; setProgress({ solved: d.solved, total: d.total }) }
@@ -508,9 +525,9 @@ export default function Zone1Game({ difficulty }: { difficulty?: number } = {}) 
   // ── Dismiss modal — ALWAYS resets the dedup flag ──────────
   const dismissModal = useCallback(() => {
     answerDispatchedRef.current = false
-    // wrongObstaclesRef intentionally NOT cleared — must persist across reopens
     setActiveTrigger(null)
     setActiveProblem(null)
+    setPhaseSignal(null)
   }, [])
 
   // ── Wrong attempt inside the modal ───────────────────────
@@ -584,6 +601,13 @@ export default function Zone1Game({ difficulty }: { difficulty?: number } = {}) 
     dismissModal()
   }, [sendAnswer, dismissModal])
 
+  // ── Trick discovered — player taps "Got it!" ─────────────
+  const handlePhaseSignalDismiss = useCallback(() => {
+    const trigger = activeTriggerRef.current
+    if (trigger) sendAnswer(true, trigger.obstacleId)
+    dismissModal()
+  }, [sendAnswer, dismissModal])
+
   // ─────────────────────────────────────────────────────────
   return (
     <div className="relative w-screen h-screen overflow-hidden bg-[#1a6ec7]">
@@ -610,13 +634,16 @@ export default function Zone1Game({ difficulty }: { difficulty?: number } = {}) 
       {!showControls && !activeTrigger && <KeyboardHint />}
 
 
+      {activeTrigger && phaseSignal && (
+        <TrickDiscoveredCard signal={phaseSignal} onDismiss={handlePhaseSignalDismiss} />
+      )}
+
       {activeTrigger && activeProblem && (
         <MathModal
           trigger={activeTrigger}
           problem={activeProblem}
           coins={coins}
           streak={streak}
-          difficulty={difficulty}
           sessionId={sessionIdRef.current}
           onCorrect={handleCorrect}
           onInsight={handleInsight}

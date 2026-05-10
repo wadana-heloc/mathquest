@@ -2,7 +2,7 @@
 
 import { useState, useTransition, useRef } from "react";
 import { logout } from "@/lib/auth/actions";
-import { addChild, deleteChild, type DBChild } from "@/lib/parent/actions";
+import { addChild, deleteChild, generateStory, type DBChild, type GeneratedStory, type StoryChapter } from "@/lib/parent/actions";
 import AddChildModal from "@/components/parent/AddChildModal";
 import type { AddChildForm } from "@/types/parent";
 
@@ -95,12 +95,6 @@ const CAT: Record<string, string> = {
   B: "bg-violet/15 text-violet",
   C: "bg-gold/15 text-yellow-700",
   D: "bg-coral/15 text-coral",
-};
-
-const STORY_STATUS = {
-  pending:  { pill: "bg-amber-50 text-amber-700 border border-amber-200",  dot: "bg-amber-400",  label: "Pending"  },
-  approved: { pill: "bg-green-50 text-green-700 border border-green-200",  dot: "bg-green-500",  label: "Approved" },
-  rejected: { pill: "bg-gray-100 text-gray-500 border border-gray-200",    dot: "bg-gray-400",   label: "Rejected" },
 };
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
@@ -197,6 +191,7 @@ function MusicUploadZone({ onUpload }: { onUpload: (file: File, ctx: AudioContex
           }`}
         >
           <input
+          aria-label="Select music file to upload"
             ref={inputRef}
             type="file"
             accept=".mp3,.wav,audio/mpeg,audio/wav"
@@ -646,105 +641,163 @@ function SettingsTab({ child, onSave, onAudioChange }: {
   );
 }
 
-function ContentTab({ stories, onUpdate }: {
-  stories: Child["stories"];
-  onUpdate: (id: string, status: "approved" | "rejected", text?: string) => void;
+function ChapterAccordion({ chapter, open, onToggle }: {
+  chapter: StoryChapter;
+  open: boolean;
+  onToggle: () => void;
 }) {
-  const [open, setOpen] = useState<string | null>(null);
-  const [editing, setEditing] = useState<string | null>(null);
-  const [draft, setDraft] = useState("");
-  const [filter, setFilter] = useState<"all" | "pending" | "approved" | "rejected">("all");
-  const list = filter === "all" ? stories : stories.filter(s => s.status === filter);
+  return (
+    <div className="border-b border-stone-50 last:border-0">
+      <button type="button" onClick={onToggle}
+        className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-stone-50 transition-colors text-left">
+        <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center font-display font-800 text-primary text-xs flex-shrink-0">
+          {chapter.number}
+        </div>
+        <span className="flex-1 text-sm font-semibold text-stone-700">{chapter.title}</span>
+        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#a8a29e" strokeWidth="2"
+          className={`flex-shrink-0 transition-transform duration-200 ${open ? "rotate-180" : ""}`}>
+          <path d="M2 5l5 5 5-5"/>
+        </svg>
+      </button>
+      {open && (
+        <div className="px-5 pb-5 pt-1">
+          <div className="p-4 bg-stone-50 rounded-xl text-sm text-stone-600 leading-relaxed whitespace-pre-wrap">
+            {chapter.content}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ContentTab({ childId, childName }: { childId: string; childName: string }) {
+  const [script, setScript] = useState("");
+  const [generating, setGenerating] = useState(false);
+  const [genError, setGenError] = useState<string | null>(null);
+  const [stories, setStories] = useState<GeneratedStory[]>([]);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [openChapter, setOpenChapter] = useState<number | null>(null);
+
+  const selected = stories.find(s => s.id === selectedId) ?? null;
+
+  async function handleGenerate() {
+    if (!script.trim() || generating) return;
+    setGenError(null);
+    setGenerating(true);
+    const result = await generateStory(childId, script.trim());
+    setGenerating(false);
+    if (result.error) {
+      setGenError(result.error);
+      return;
+    }
+    if (result.story) {
+      setStories(prev => [result.story!, ...prev]);
+      setSelectedId(result.story!.id);
+      setOpenChapter(1);
+      setScript("");
+    }
+  }
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-center gap-2">
-          <h3 className="font-display font-800 text-stone-800 text-sm">Content Approval Queue</h3>
-          {stories.filter(s => s.status === "pending").length > 0 && (
-            <span className="w-5 h-5 rounded-full bg-coral text-white text-[10px] font-bold flex items-center justify-center">
-              {stories.filter(s => s.status === "pending").length}
-            </span>
-          )}
+      {/* Script input */}
+      <div className="bg-white rounded-2xl border border-stone-100 overflow-hidden">
+        <div className="px-5 py-4 border-b border-stone-50">
+          <h3 className="font-display font-800 text-stone-800 text-sm">Generate a Story</h3>
+          <p className="text-xs text-stone-400 mt-0.5">Describe the story you want for {childName}</p>
         </div>
-        <div className="flex bg-stone-100 rounded-xl p-1">
-          {(["all","pending","approved","rejected"] as const).map(f => (
-            <button key={f} onClick={() => setFilter(f)}
-              className={`px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all ${filter === f ? "bg-white text-stone-800 shadow-sm" : "text-stone-400"}`}>
-              {f}
+        <div className="p-5 space-y-3">
+          <textarea
+            value={script}
+            onChange={e => setScript(e.target.value)}
+            placeholder={`e.g. A space adventure where ${childName} must solve multiplication puzzles to repair a rocket and return home…`}
+            rows={4}
+            disabled={generating}
+            className="w-full px-4 py-3 rounded-xl border border-stone-200 bg-stone-50 text-sm text-stone-700 resize-none outline-none focus:border-gold focus:ring-2 focus:ring-gold/20 transition-all leading-relaxed placeholder:text-stone-300 disabled:opacity-50"
+          />
+          {genError && (
+            <p className="text-xs text-coral font-medium">{genError}</p>
+          )}
+          <div className="flex justify-end">
+            <button type="button" onClick={handleGenerate}
+              disabled={!script.trim() || generating}
+              className="h-10 px-6 rounded-xl bg-primary text-white text-sm font-display font-800 hover:bg-navy-light transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
+              {generating ? (
+                <>
+                  <span className="w-3.5 h-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin flex-shrink-0" />
+                  Generating…
+                </>
+              ) : "✨ Generate Story"}
             </button>
-          ))}
+          </div>
         </div>
       </div>
 
-      {list.length === 0 ? (
-        <div className="bg-white rounded-2xl border border-stone-100 p-12 text-center">
-          <div className="text-4xl mb-3">📭</div>
-          <p className="text-sm font-semibold text-stone-600">No stories in this category</p>
-          <p className="text-xs text-stone-400 mt-1">AI-generated stories will appear here for review</p>
+      {/* Loading skeleton */}
+      {generating && (
+        <div className="bg-white rounded-2xl border border-stone-100 overflow-hidden animate-pulse">
+          <div className="px-5 py-4 border-b border-stone-50 flex items-center justify-between">
+            <div>
+              <div className="h-4 bg-stone-100 rounded-lg w-44 mb-2" />
+              <div className="h-3 bg-stone-100 rounded-lg w-32" />
+            </div>
+            <div className="h-3 bg-stone-100 rounded w-20" />
+          </div>
+          {[1, 2, 3].map(i => (
+            <div key={i} className="flex items-center gap-3 px-5 py-3.5 border-b border-stone-50 last:border-0">
+              <div className="w-7 h-7 rounded-lg bg-stone-100 flex-shrink-0" />
+              <div className="h-3 bg-stone-100 rounded flex-1" />
+            </div>
+          ))}
         </div>
-      ) : (
-        <div className="space-y-3">
-          {list.map(story => {
-            const ss = STORY_STATUS[story.status];
-            const isOpen = open === story.id;
-            const isEdit = editing === story.id;
-            return (
-              <div key={story.id} className="bg-white rounded-2xl border border-stone-100 overflow-hidden">
-                <div className="flex items-center gap-3 p-4 cursor-pointer hover:bg-stone-50 transition-colors"
-                  onClick={() => setOpen(isOpen ? null : story.id)}>
-                  <div className={`w-2 h-2 rounded-full flex-shrink-0 ${ss.dot}`} />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2 flex-wrap">
-                      <span className="font-display font-700 text-stone-800 text-sm">{story.title}</span>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${ss.pill}`}>{ss.label}</span>
-                    </div>
-                    <p className="text-xs text-stone-400 truncate mt-0.5">{story.body.slice(0, 80)}…</p>
-                  </div>
-                  <div className="text-[10px] text-stone-400 flex-shrink-0 hidden sm:block">{story.date}</div>
-                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#a8a29e" strokeWidth="2"
-                    className={`flex-shrink-0 transition-transform ${isOpen ? "rotate-180" : ""}`}>
-                    <path d="M2 5l5 5 5-5"/>
-                  </svg>
-                </div>
-                {isOpen && (
-                  <div className="border-t border-stone-100 p-4">
-                    <div className="flex gap-4 text-[11px] text-stone-400 mb-3 flex-wrap">
-                      <span><strong className="text-stone-600">Style:</strong> {story.style}</span>
-                      <span><strong className="text-stone-600">Generated:</strong> {story.date}</span>
-                    </div>
-                    {isEdit ? (
-                      <textarea aria-label="Edit story content" value={draft} onChange={e => setDraft(e.target.value)}
-                        className="w-full h-32 p-3 rounded-xl border border-amber-200 bg-amber-50 text-sm text-stone-700 resize-none outline-none leading-relaxed" />
-                    ) : (
-                      <div className="p-4 bg-stone-50 rounded-xl text-sm text-stone-600 leading-relaxed">{story.body}</div>
-                    )}
-                    <div className="flex flex-wrap gap-2 mt-3">
-                      {story.status !== "approved" && !isEdit && (
-                        <button onClick={() => onUpdate(story.id, "approved")}
-                          className="px-4 h-8 rounded-lg bg-green-50 text-green-700 border border-green-200 text-xs font-semibold hover:bg-green-100 transition-colors">✓ Approve</button>
-                      )}
-                      {!isEdit ? (
-                        <button onClick={() => { setEditing(story.id); setDraft(story.body); }}
-                          className="px-4 h-8 rounded-lg bg-amber-50 text-amber-700 border border-amber-200 text-xs font-semibold hover:bg-amber-100 transition-colors">✏️ Edit & Approve</button>
-                      ) : (
-                        <>
-                          <button onClick={() => { onUpdate(story.id, "approved", draft); setEditing(null); }}
-                            className="px-4 h-8 rounded-lg bg-green-50 text-green-700 border border-green-200 text-xs font-semibold">✓ Save & Approve</button>
-                          <button onClick={() => setEditing(null)}
-                            className="px-4 h-8 rounded-lg bg-stone-100 text-stone-500 text-xs font-semibold">Cancel</button>
-                        </>
-                      )}
-                      {story.status !== "rejected" && !isEdit && (
-                        <button onClick={() => onUpdate(story.id, "rejected")}
-                          className="px-4 h-8 rounded-lg text-stone-400 text-xs font-semibold hover:bg-stone-50 transition-colors sm:ml-auto">Reject</button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
+      )}
+
+      {/* Story selector (when multiple stories generated in session) */}
+      {!generating && stories.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-1 -mb-1">
+          {stories.map(s => (
+            <button key={s.id} type="button"
+              onClick={() => { setSelectedId(s.id); setOpenChapter(null); }}
+              className={`flex-shrink-0 h-9 px-4 rounded-xl text-xs font-semibold transition-all ${selectedId === s.id ? "bg-primary text-white shadow-sm" : "bg-white border border-stone-200 text-stone-500 hover:border-stone-300"}`}>
+              {s.title}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Generated story */}
+      {!generating && selected && (
+        <div className="bg-white rounded-2xl border border-stone-100 overflow-hidden">
+          <div className="px-5 py-4 border-b border-stone-50 flex items-start gap-3">
+            <div className="flex-1 min-w-0">
+              <h3 className="font-display font-800 text-stone-800 text-base">{selected.title}</h3>
+              <p className="text-xs text-stone-400 mt-0.5 line-clamp-1 italic">"{selected.generated_at}"</p>
+            </div>
+            <span className="text-[10px] text-stone-400 flex-shrink-0 mt-1 whitespace-nowrap">
+              {selected.chapters.length} chapters
+            </span>
+          </div>
+          <div>
+            {selected.chapters.map(ch => (
+              <ChapterAccordion
+                key={ch.number}
+                chapter={ch}
+                open={openChapter === ch.number}
+                onToggle={() => setOpenChapter(openChapter === ch.number ? null : ch.number)}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Empty state */}
+      {!generating && stories.length === 0 && (
+        <div className="bg-white rounded-2xl border border-stone-100 p-12 text-center">
+          <div className="text-4xl mb-3">📖</div>
+          <p className="text-sm font-semibold text-stone-600">No stories yet</p>
+          <p className="text-xs text-stone-400 mt-1">
+            Write a description above and {childName} will get a personalised adventure
+          </p>
         </div>
       )}
     </div>
@@ -927,7 +980,7 @@ export default function ParentDashboardClient({ parentName, parentEmail, dbChild
   const [isPending, startTransition] = useTransition();
 
   const child = children.find(c => c.id === selectedId) ?? null;
-  const pending = child?.stories.filter(s => s.status === "pending").length ?? 0;
+  const pending = 0;
 
   const updateChild = (id: string, patch: Partial<Child>) =>
     setChildren(cs => cs.map(c => c.id === id ? { ...c, ...patch } : c));
@@ -1153,14 +1206,8 @@ export default function ParentDashboardClient({ parentName, parentEmail, dbChild
                 {tab === "overview"  && <OverviewTab child={child} />}
                 {tab === "analytics" && <AnalyticsTab child={child} />}
                 {tab === "settings"  && <SettingsTab child={child} onSave={s => updateChild(child.id, { settings: s })} onAudioChange={audio => updateChild(child.id, { audio })} />}
-                {tab === "content"   && (
-                  <ContentTab stories={child.stories}
-                    onUpdate={(id, status, text) =>
-                      updateChild(child.id, {
-                        stories: child.stories.map(s => s.id === id ? { ...s, status, body: text ?? s.body } : s),
-                      })
-                    }
-                  />
+                {tab === "content" && (
+                  <ContentTab childId={child.id} childName={child.name} />
                 )}
                 {tab === "reset" && (
                   <ResetTab

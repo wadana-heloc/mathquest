@@ -12,7 +12,7 @@ import { useRouter } from 'next/navigation'
 import { ProblemCard } from '@/components/game/ProblemCard'
 import { TricksModal } from '@/components/game/TricksModal'
 import { InsightCelebration } from '@/components/game/InsightCelebration'
-import { fetchProblems, updateStreak, advanceZone } from '@/lib/game/actions'
+import { fetchProblem, updateStreak, advanceZone } from '@/lib/game/actions'
 import type { Problem, AttemptResult, HintResult } from '@/types/game'
 import { ZONE2_EVENTS } from '@/lib/phaser/Zone2Scene'
 import { useChildProfile } from '@/lib/hooks/useChildProfile'
@@ -201,7 +201,7 @@ function ObstacleBadge({ label, type }: { label: string; type: 'obstacle' | 'bos
 }
 
 function MathModal({
-  trigger, problem, coins, streak, difficulty, sessionId,
+  trigger, problem, coins, streak, sessionId,
   onCorrect, onInsight, onHintUsed,
   onCorrectClose, onWrongClose, onWrong,
 }: {
@@ -209,7 +209,6 @@ function MathModal({
   problem:       Problem
   coins:         number
   streak:        number
-  difficulty?:   number
   sessionId:     string
   onCorrect:     (r: AttemptResult) => void
   onInsight:     (r: AttemptResult) => void
@@ -238,7 +237,6 @@ function MathModal({
         <ProblemCard
           problem={problem}
           sessionId={sessionId}
-          difficulty={difficulty}
           currentCoins={coins}
           currentStreak={streak}
           onCorrect={onCorrect}
@@ -301,10 +299,33 @@ function ZoneCompleteScreen({ onNext, onHub, sessionCoins }: { onNext: () => voi
 }
 
 // ─────────────────────────────────────────────────────────────
+//  Trick discovered card (phase_signal reveal)
+// ─────────────────────────────────────────────────────────────
+
+function TrickDiscoveredCard({ signal, onDismiss }: { signal: string; onDismiss: () => void }) {
+  return (
+    <div className="absolute inset-0 z-40 flex items-center justify-center bg-[#04021A]/70 backdrop-blur-sm">
+      <div className="w-full max-w-sm mx-4 bg-violet-950/90 border border-violet-400/40 rounded-2xl p-8 text-center shadow-2xl shadow-violet-900/40 animate-[slideUp_0.3s_ease_forwards]">
+        <div className="text-5xl mb-4">✨</div>
+        <h2 className="text-2xl font-black text-white mb-2">Discovered Trick!</h2>
+        <p className="text-violet-300 text-sm mb-6">{signal}</p>
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="bg-violet-500 hover:bg-violet-400 active:scale-95 text-white font-black text-lg px-10 py-3 rounded-xl transition-all duration-150"
+        >
+          Got it!
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
 //  Main component
 // ─────────────────────────────────────────────────────────────
 
-export default function Zone2Game({ difficulty }: { difficulty?: number } = {}) {
+export default function Zone2Game() {
   const canvasRef         = useRef<HTMLDivElement>(null)
   const gameRef           = useRef<import('phaser').Game | null>(null)
   const activeTriggerRef  = useRef<ProblemTrigger | null>(null)
@@ -312,12 +333,14 @@ export default function Zone2Game({ difficulty }: { difficulty?: number } = {}) 
   const answerDispatchedRef = useRef(false)
   const sessionIdRef = useRef(crypto.randomUUID())
   const wrongObstaclesRef = useRef<Set<string>>(new Set())
+  const phaseSignalsRef   = useRef<Map<string, string>>(new Map())
 
   const { profile } = useChildProfile()
   const router      = useRouter()
 
   const [activeTrigger, setActiveTrigger] = useState<ProblemTrigger | null>(null)
   const [activeProblem, setActiveProblem] = useState<Problem | null>(null)
+  const [phaseSignal,   setPhaseSignal]   = useState<string | null>(null)
   const [coins,         setCoins]         = useState(0)
   const [sessionCoins,  setSessionCoins]  = useState(0)
   const [streak,        setStreak]        = useState(0)
@@ -349,17 +372,6 @@ export default function Zone2Game({ difficulty }: { difficulty?: number } = {}) 
     }
   }, [profile])
 
-  // ── Load problems for zone 2 ──────────────────────────────
-  useEffect(() => {
-    fetchProblems(2, difficulty)
-      .then(list => {
-        const map = new Map<string, Problem>()
-        list.forEach(p => map.set(p.id, p))
-        problemsRef.current = map
-        console.log('[Zone2] Problems loaded:', Array.from(map.keys()))
-      })
-      .catch(err => console.error('[Zone2] fetchProblems error:', err))
-  }, [])
 
   // ── Boot Phaser ───────────────────────────────────────────
   useEffect(() => {
@@ -387,19 +399,31 @@ export default function Zone2Game({ difficulty }: { difficulty?: number } = {}) 
   useEffect(() => {
     const onShowProblem = (e: Event) => {
       const data = (e as CustomEvent<ProblemTrigger>).detail
-      console.log('[Zone2] SHOW_PROBLEM:', data.problemId)
 
-      const tryOpen = (retriesLeft: number) => {
-        const problem = problemsRef.current.get(data.problemId)
-        if (problem) { setActiveTrigger(data); setActiveProblem(problem); return }
-        if (retriesLeft <= 0) {
-          console.error('[Zone2] Problem not found:', data.problemId)
+      const cached = problemsRef.current.get(data.obstacleId)
+      if (cached) { setActiveTrigger(data); setActiveProblem(cached); return }
+
+      const cachedSignal = phaseSignalsRef.current.get(data.obstacleId)
+      if (cachedSignal) { setActiveTrigger(data); setPhaseSignal(cachedSignal); return }
+
+      fetchProblem()
+        .then(({ problem, phase_signal }) => {
+          if (problem) {
+            problemsRef.current.set(data.obstacleId, problem)
+            setActiveTrigger(data)
+            setActiveProblem(problem)
+          } else if (phase_signal) {
+            phaseSignalsRef.current.set(data.obstacleId, phase_signal)
+            setActiveTrigger(data)
+            setPhaseSignal(phase_signal)
+          } else {
+            dispatchToPhaser(ZONE2_EVENTS.ANSWER_RESULT, { correct: false, obstacleId: data.obstacleId })
+          }
+        })
+        .catch(err => {
+          console.error('[Zone2] fetchProblem error:', err)
           dispatchToPhaser(ZONE2_EVENTS.ANSWER_RESULT, { correct: false, obstacleId: data.obstacleId })
-          return
-        }
-        setTimeout(() => tryOpen(retriesLeft - 1), 300)
-      }
-      tryOpen(6)
+        })
     }
 
     const onBossPhase    = (e: Event) => { const d = (e as CustomEvent).detail; setBossPhase(d.phase); setBossVisible(true) }
@@ -425,6 +449,7 @@ export default function Zone2Game({ difficulty }: { difficulty?: number } = {}) 
     answerDispatchedRef.current = false
     setActiveTrigger(null)
     setActiveProblem(null)
+    setPhaseSignal(null)
   }, [])
 
   const handleWrong = useCallback(() => {
@@ -469,6 +494,12 @@ export default function Zone2Game({ difficulty }: { difficulty?: number } = {}) 
     if (!activeTriggerRef.current) dismissModal()
   }, [dismissModal])
 
+  const handlePhaseSignalDismiss = useCallback(() => {
+    const trigger = activeTriggerRef.current
+    if (trigger) sendAnswer(true, trigger.obstacleId)
+    dismissModal()
+  }, [sendAnswer, dismissModal])
+
   const handleWrongClose = useCallback(() => {
     const trigger = activeTriggerRef.current
     if (trigger) sendAnswer(false, trigger.obstacleId)
@@ -493,13 +524,16 @@ export default function Zone2Game({ difficulty }: { difficulty?: number } = {}) 
       {!showControls && !activeTrigger && <KeyboardHint />}
 
 
+      {activeTrigger && phaseSignal && (
+        <TrickDiscoveredCard signal={phaseSignal} onDismiss={handlePhaseSignalDismiss} />
+      )}
+
       {activeTrigger && activeProblem && (
         <MathModal
           trigger={activeTrigger}
           problem={activeProblem}
           coins={coins}
           streak={streak}
-          difficulty={difficulty}
           sessionId={sessionIdRef.current}
           onCorrect={handleCorrect}
           onInsight={handleInsight}

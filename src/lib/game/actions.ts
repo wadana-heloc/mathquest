@@ -53,41 +53,13 @@ interface StreakResponse {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Phaser ID helpers  (Z2-OBJ-01, Z2-BOSS-01, …)
+// 1. Fetch a single problem (backend selects the right one for this child)
 // ─────────────────────────────────────────────────────────────────────────────
 
-const objId = (zone: number, i: number) => `Z${zone}-OBJ-${String(i + 1).padStart(2, '0')}`
-const bossId = (zone: number, i: number) => `Z${zone}-BOSS-${String(i + 1).padStart(2, '0')}`
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 1. Fetch problems for a zone
-// ─────────────────────────────────────────────────────────────────────────────
-
-export async function fetchProblems(zone: number, difficulty?: number): Promise<Problem[]> {
-  const params = new URLSearchParams({ zone: String(zone) })
-  // Pass difficulty=10 when none is specified so the backend's
-  // lte("difficulty", effective) filter returns all zone problems,
-  // not just those at or below the child's current_difficulty.
-  params.set('difficulty', String(difficulty ?? 10))
-
-  const data = await apiGet<ProblemsListResponse>(`/problems?${params}`)
-
-  console.log(`[fetchProblems] Fetched ${data.problems.length} problems for zone=${zone}, difficulty_lte=${params.get('difficulty')}`)
-  console.log(`3333 data.problems: ${JSON.stringify(data.problems, null, 2)}`)
-
-  if (!data.problems.length) {
-    console.error(`[fetchProblems] API returned empty for zone=${zone}. Ensure the problems table has seeded data.`)
-    return []
-  }
-
-  const OBSTACLE_SLOTS = 8
-  const BOSS_SLOTS = 3
-  const result: Problem[] = []
-
-  for (let i = 0; i < OBSTACLE_SLOTS; i++) {
-    const p = data.problems[i % data.problems.length]
-    result.push({
-      id: objId(zone, i),
+function mapProblem(p: ApiProblem, phase_signal: string | null): { problem: Problem; phase_signal: string | null } {
+  return {
+    problem: {
+      id: p.id,
       backend_id: p.id,
       zone: p.zone as Zone,
       category: p.category as ProblemCategory,
@@ -99,29 +71,38 @@ export async function fetchProblems(zone: number, difficulty?: number): Promise<
       flavor_text: p.flavor_text ?? '',
       tags: p.tags,
       answer_type: p.answer_type as 'exact' | 'range' | 'set',
-    })
+    },
+    phase_signal,
+  }
+}
+
+
+export async function fetchProblem(): Promise<{ problem: Problem | null; phase_signal: string | null }> {
+  const data = await apiGet<ProblemsListResponse>('/problems')
+  console.log('[fetchProblem] response:', JSON.stringify(data))
+
+  if (data.problems.length) {
+    return mapProblem(data.problems[0], data.phase_signal ?? null)
   }
 
-  const hardest = [...data.problems].sort((a, b) => b.difficulty - a.difficulty)
-  for (let i = 0; i < BOSS_SLOTS; i++) {
-    const p = hardest[i % hardest.length]
-    result.push({
-      id: bossId(zone, i),
-      backend_id: p.id,
-      zone: p.zone as Zone,
-      category: p.category as ProblemCategory,
-      difficulty: p.difficulty,
-      trick_id: null,
-      stem: p.stem,
-      shortcut_time_threshold_ms: 5000,
-      hints: p.hints as Hint[],
-      flavor_text: p.flavor_text ?? '',
-      tags: p.tags,
-      answer_type: p.answer_type as 'exact' | 'range' | 'set',
-    })
+  if (data.phase_signal) {
+    return { problem: null, phase_signal: data.phase_signal }
   }
 
-  return result
+  // Backend returned empty with no signal — retry once after 800ms.
+  // This handles a race where the backend queue is populated async.
+  console.warn('[fetchProblem] Empty response, retrying in 800ms…')
+  await new Promise(r => setTimeout(r, 800))
+
+  const retry = await apiGet<ProblemsListResponse>('/problems')
+  console.log('[fetchProblem] retry response:', JSON.stringify(retry))
+
+  if (retry.problems.length) {
+    return mapProblem(retry.problems[0], retry.phase_signal ?? null)
+  }
+
+  console.warn('[fetchProblem] Still empty after retry. phase_signal:', retry.phase_signal)
+  return { problem: null, phase_signal: retry.phase_signal ?? null }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -135,7 +116,6 @@ export async function submitAnswer(payload: {
   duration_ms: number
   hint_level_used: 0 | 1 | 2 | 3
   session_id: string
-  difficulty?: number
 }): Promise<AttemptResult> {
   const data = await apiPost<AttemptResponse>('/problems/attempt', {
     problem_id: payload.backend_id ?? payload.problem_id,

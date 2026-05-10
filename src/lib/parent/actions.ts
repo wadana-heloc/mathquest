@@ -119,6 +119,36 @@ export async function deleteChild(
   return {}
 }
 
+// ── Generate Story ────────────────────────────────────────────────────────────
+
+export type StoryChapter = {
+  number: number
+  title: string
+  content: string
+}
+
+export type GeneratedStory = {
+  id: string
+  title: string
+  chapters: StoryChapter[]
+  generated_at: string
+}
+
+export async function generateStory(
+  childId: string,
+  script: string
+): Promise<{ error?: string; story?: GeneratedStory }> {
+  try {
+    const data = await apiPost<GeneratedStory>('/parent/stories/generate', {
+      child_id: childId,
+      script,
+    })
+    return { story: data }
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Story generation failed.' }
+  }
+}
+
 // ── Fetch Parent Dashboard Data ───────────────────────────────────────────────
 
 export async function getParentData(): Promise<{

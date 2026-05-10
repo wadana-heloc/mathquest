@@ -359,7 +359,6 @@ function ChoiceButtons({
 export interface ProblemCardProps {
   problem: Problem
   sessionId: string
-  difficulty?: number
 
   // Live state passed in from the parent game component
   currentCoins: number
@@ -379,7 +378,6 @@ export interface ProblemCardProps {
 export function ProblemCard({
   problem,
   sessionId,
-  difficulty,
   currentCoins,
   currentStreak: _currentStreak,
   onCorrect,
@@ -484,7 +482,6 @@ export function ProblemCard({
           duration_ms,
           hint_level_used: hintLevel,
           session_id: sessionId,
-          difficulty,
         })
 
         console.log('[ProblemCard][submitAnswer] result:', result)

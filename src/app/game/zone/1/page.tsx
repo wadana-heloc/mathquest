@@ -35,11 +35,6 @@ const Zone1Game = dynamic(
   }
 )
 
-export default function Zone1Page({
-  searchParams,
-}: {
-  searchParams: { difficulty?: string }
-}) {
-  const difficulty = searchParams.difficulty ? parseInt(searchParams.difficulty, 10) : undefined
-  return <Zone1Game difficulty={difficulty} />
+export default function Zone1Page() {
+  return <Zone1Game />
 }

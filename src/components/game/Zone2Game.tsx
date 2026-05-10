@@ -10,10 +10,10 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import { useRouter } from 'next/navigation'
 import { ProblemCard } from '@/components/game/ProblemCard'
-import { TricksModal } from '@/components/game/TricksModal'
+import { TricksModal, TrickRevealModal } from '@/components/game/TricksModal'
 import { InsightCelebration } from '@/components/game/InsightCelebration'
-import { fetchProblem, updateStreak, advanceZone } from '@/lib/game/actions'
-import type { Problem, AttemptResult, HintResult } from '@/types/game'
+import { fetchProblem, updateStreak, advanceZone, fetchCurrentTrick } from '@/lib/game/actions'
+import type { Problem, AttemptResult, HintResult, TrickData } from '@/types/game'
 import { ZONE2_EVENTS } from '@/lib/phaser/Zone2Scene'
 import { useChildProfile } from '@/lib/hooks/useChildProfile'
 
@@ -191,8 +191,8 @@ function ObstacleBadge({ label, type }: { label: string; type: 'obstacle' | 'bos
     <div className="flex items-center justify-center gap-2 mb-3">
       <div className={`px-4 py-1 rounded-full text-xs font-black uppercase tracking-widest border
         ${type === 'boss'
-          ? 'bg-purple-950/80 border-purple-500/50 text-purple-300'
-          : 'bg-indigo-950/80 border-indigo-500/30 text-indigo-300'}`}>
+          ? 'bg-fuchsia-500/20 border-fuchsia-400/60 text-fuchsia-200'
+          : 'bg-violet-500/20 border-violet-400/60 text-violet-200'}`}>
         {type === 'boss' ? '⚡ Boss Battle' : '🧩 Obstacle'}
       </div>
       <span className="text-white/60 text-sm font-bold">{label}</span>
@@ -201,12 +201,13 @@ function ObstacleBadge({ label, type }: { label: string; type: 'obstacle' | 'bos
 }
 
 function MathModal({
-  trigger, problem, coins, streak, sessionId,
+  trigger, problem, zone, coins, streak, sessionId,
   onCorrect, onInsight, onHintUsed,
   onCorrectClose, onWrongClose, onWrong,
 }: {
   trigger:       ProblemTrigger
   problem:       Problem
+  zone:          number
   coins:         number
   streak:        number
   sessionId:     string
@@ -237,6 +238,7 @@ function MathModal({
         <ProblemCard
           problem={problem}
           sessionId={sessionId}
+          zone={zone}
           currentCoins={coins}
           currentStreak={streak}
           onCorrect={onCorrect}
@@ -299,29 +301,6 @@ function ZoneCompleteScreen({ onNext, onHub, sessionCoins }: { onNext: () => voi
 }
 
 // ─────────────────────────────────────────────────────────────
-//  Trick discovered card (phase_signal reveal)
-// ─────────────────────────────────────────────────────────────
-
-function TrickDiscoveredCard({ signal, onDismiss }: { signal: string; onDismiss: () => void }) {
-  return (
-    <div className="absolute inset-0 z-40 flex items-center justify-center bg-[#04021A]/70 backdrop-blur-sm">
-      <div className="w-full max-w-sm mx-4 bg-violet-950/90 border border-violet-400/40 rounded-2xl p-8 text-center shadow-2xl shadow-violet-900/40 animate-[slideUp_0.3s_ease_forwards]">
-        <div className="text-5xl mb-4">✨</div>
-        <h2 className="text-2xl font-black text-white mb-2">Discovered Trick!</h2>
-        <p className="text-violet-300 text-sm mb-6">{signal}</p>
-        <button
-          type="button"
-          onClick={onDismiss}
-          className="bg-violet-500 hover:bg-violet-400 active:scale-95 text-white font-black text-lg px-10 py-3 rounded-xl transition-all duration-150"
-        >
-          Got it!
-        </button>
-      </div>
-    </div>
-  )
-}
-
-// ─────────────────────────────────────────────────────────────
 //  Main component
 // ─────────────────────────────────────────────────────────────
 
@@ -351,6 +330,7 @@ export default function Zone2Game() {
   const [showControls,  setShowControls]  = useState(false)
   const [showTricks,    setShowTricks]    = useState(false)
   const [capReached,    setCapReached]    = useState(false)
+  const [trickData,     setTrickData]     = useState<TrickData | null>(null)
   const [showInsight,   setShowInsight]   = useState(false)
   const insightResultRef = useRef<AttemptResult | null>(null)
 
@@ -445,11 +425,19 @@ export default function Zone2Game() {
     dispatchToPhaser(ZONE2_EVENTS.ANSWER_RESULT, { correct, obstacleId })
   }, [])
 
+  // ── Fetch trick details whenever a reveal signal arrives ─────
+  useEffect(() => {
+    if (!phaseSignal) return
+    setTrickData(null)
+    fetchCurrentTrick().then(t => { if (t) setTrickData(t) }).catch(() => {})
+  }, [phaseSignal])
+
   const dismissModal = useCallback(() => {
     answerDispatchedRef.current = false
     setActiveTrigger(null)
     setActiveProblem(null)
     setPhaseSignal(null)
+    setTrickData(null)
   }, [])
 
   const handleWrong = useCallback(() => {
@@ -525,13 +513,14 @@ export default function Zone2Game() {
 
 
       {activeTrigger && phaseSignal && (
-        <TrickDiscoveredCard signal={phaseSignal} onDismiss={handlePhaseSignalDismiss} />
+        <TrickRevealModal trick={trickData} zone={2} onDismiss={handlePhaseSignalDismiss} />
       )}
 
       {activeTrigger && activeProblem && (
         <MathModal
           trigger={activeTrigger}
           problem={activeProblem}
+          zone={2}
           coins={coins}
           streak={streak}
           sessionId={sessionIdRef.current}

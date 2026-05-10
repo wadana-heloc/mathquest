@@ -419,7 +419,7 @@ function StatCard({
       <span className={`font-display font-black text-xl md:text-2xl tabular-nums leading-none ${colorClass}`}>
         {typeof value === "number" ? value.toLocaleString() : value}
       </span>
-      <span className="text-white/40 text-[10px] md:text-xs font-body uppercase tracking-widest text-center">
+      <span className="text-slate-400 text-[10px] md:text-xs font-body uppercase tracking-widest text-center">
         {label}
       </span>
     </div>
@@ -434,7 +434,7 @@ function DifficultyStars({ count, colorClass }: { count: number; colorClass: str
       {[1, 2, 3].map((i) => (
         <span
           key={i}
-          className={`text-xs transition-all duration-200 ${i <= count ? colorClass : "text-white/15"
+          className={`text-xs transition-all duration-200 ${i <= count ? colorClass : "text-slate-300"
             }`}
         >
           ★
@@ -483,9 +483,9 @@ function ZoneCard({
         // Interaction
         "transition-all duration-200",
         // State: active
-        isActive ? `${zone.activeBorder} ${zone.activeBg} ${zone.activeGlow}` : "border-white/10 bg-navy-mid",
+        isActive ? `${zone.activeBorder} ${zone.activeBg} ${zone.activeGlow}` : "border-slate-200 bg-white",
         // Hover (only when clickable)
-        isClickable && !isActive ? "hover:border-white/30 hover:bg-navy-light hover:-translate-y-1.5 hover:shadow-[0_12px_32px_rgba(0,0,0,0.6)]" : "",
+        isClickable && !isActive ? "hover:border-indigo-300 hover:bg-indigo-50 hover:-translate-y-1.5 hover:shadow-[0_12px_32px_rgba(99,102,241,0.12)]" : "",
         isClickable && isActive ? "hover:-translate-y-1.5" : "",
         isClickable ? "active:scale-95 cursor-pointer" : "",
         // Locked state
@@ -526,17 +526,17 @@ function ZoneCard({
       </span>
 
       {/* Zone number */}
-      <span className="text-[10px] font-bold uppercase tracking-widest text-white/30 font-body">
+      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 font-body">
         Zone {zone.id}
       </span>
 
       {/* Zone name */}
-      <span className={`font-display font-black text-sm md:text-base leading-tight ${isActive ? zone.activeText : "text-white"}`}>
+      <span className={`font-display font-black text-sm md:text-base leading-tight ${isActive ? zone.activeText : "text-slate-700"}`}>
         {zone.name}
       </span>
 
       {/* Tagline */}
-      <span className="text-[11px] md:text-xs text-white/40 font-body leading-tight">
+      <span className="text-[11px] md:text-xs text-slate-400 font-body leading-tight">
         {zone.tagline}
       </span>
 
@@ -552,7 +552,7 @@ function ZoneCard({
 
       {/* Boss teaser — visible on tablet+ when active */}
       {isUnlocked && isActive && (
-        <span className="hidden md:block text-[10px] text-white/30 font-body mt-1 italic">
+        <span className="hidden md:block text-[10px] text-slate-400 font-body mt-1 italic">
           Boss: {zone.boss}
         </span>
       )}
@@ -578,13 +578,13 @@ const PARTICLES = [
 
 function LoadingScreen() {
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center bg-primary gap-5" role="status" aria-live="polite">
+    <div className="min-h-screen flex flex-col items-center justify-center bg-gradient-to-br from-violet-50 via-indigo-50 to-sky-50 gap-5" role="status" aria-live="polite">
       <div className="relative w-16 h-16">
-        <div className="absolute inset-0 rounded-full border-4 border-gold/15" />
+        <div className="absolute inset-0 rounded-full border-4 border-gold/30" />
         <div className="absolute inset-0 rounded-full border-4 border-transparent border-t-gold animate-spin" />
         <span className="absolute inset-0 flex items-center justify-center text-2xl animate-float-logo" aria-hidden="true">🎮</span>
       </div>
-      <p className="text-white/50 text-sm font-body animate-fade-in tracking-widest uppercase">
+      <p className="text-slate-500 text-sm font-body animate-fade-in tracking-widest uppercase">
         Loading adventure…
       </p>
     </div>
@@ -653,7 +653,7 @@ export default function GamePage() {
   if (loading || profileLoading) return <LoadingScreen />;
 
   return (
-    <div className="relative min-h-screen bg-primary overflow-hidden flex items-center justify-center px-4 py-10 md:py-14 lg:px-8">
+    <div className="relative min-h-screen bg-gradient-to-br from-violet-50 via-indigo-50 to-sky-50 overflow-hidden flex items-center justify-center px-4 py-10 md:py-14 lg:px-8">
       {/* ── Floating action buttons ──────────────────────────────────────── */}
       <div className="fixed top-4 left-4 z-40">
         <SettingsButton
@@ -674,17 +674,17 @@ export default function GamePage() {
         {/* Star-dot texture */}
         <div
           className="absolute inset-0 opacity-30"
-          style={{ backgroundImage: "radial-gradient(circle, rgba(255,255,255,0.18) 1px, transparent 1px)", backgroundSize: "44px 44px" }}
+          style={{ backgroundImage: "radial-gradient(circle, rgba(99,102,241,0.08) 1px, transparent 1px)", backgroundSize: "44px 44px" }}
         />
         {/* Ambient blobs */}
-        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[350px] rounded-full bg-gold/[0.05] blur-3xl animate-hero-glow" />
-        <div className="absolute bottom-0 left-1/4 w-[600px] h-[280px] rounded-full bg-teal/[0.05] blur-3xl animate-hero-glow [animation-delay:2s]" />
-        <div className="absolute top-1/3 right-0 w-[500px] h-[500px] rounded-full bg-violet/[0.04] blur-3xl animate-hero-glow [animation-delay:4s]" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[350px] rounded-full bg-gold/[0.15] blur-3xl animate-hero-glow" />
+        <div className="absolute bottom-0 left-1/4 w-[600px] h-[280px] rounded-full bg-teal/[0.12] blur-3xl animate-hero-glow [animation-delay:2s]" />
+        <div className="absolute top-1/3 right-0 w-[500px] h-[500px] rounded-full bg-violet/[0.10] blur-3xl animate-hero-glow [animation-delay:4s]" />
         {/* Floating particles */}
         {PARTICLES.map((p, i) => (
           <span
             key={i}
-            className="absolute rounded-full bg-gold/25 animate-float"
+            className="absolute rounded-full bg-violet/20 animate-float"
             style={{ width: p.w, height: p.w, top: p.top, left: p.left, animationDuration: p.dur, animationDelay: p.del }}
           />
         ))}
@@ -720,7 +720,7 @@ export default function GamePage() {
                 MathQuest
               </h1>
 
-              <p className="mt-3 text-white/45 font-body tracking-wide animate-fade-in [animation-delay:0.5s] opacity-0 [animation-fill-mode:forwards]"
+              <p className="mt-3 text-slate-500 font-body tracking-wide animate-fade-in [animation-delay:0.5s] opacity-0 [animation-fill-mode:forwards]"
                 style={{ fontSize: "clamp(0.7rem, 2vw, 0.875rem)" }}>
                 Enter the Number Wilds · Solve · Discover · Conquer
               </p>
@@ -740,7 +740,7 @@ export default function GamePage() {
               aria-label="Player profile"
             > */}
             <div
-              className="bg-navy-mid border border-white/10 rounded-xl p-5 md:p-6 shadow-[0_6px_40px_rgba(0,0,0,0.55)] animate-fade-slide-up opacity-0 [animation-fill-mode:forwards] [animation-delay:0.25s] md:col-span-2"
+              className="bg-white/80 backdrop-blur-sm border border-slate-200 rounded-xl p-5 md:p-6 shadow-[0_6px_32px_rgba(99,102,241,0.10)] animate-fade-slide-up opacity-0 [animation-fill-mode:forwards] [animation-delay:0.25s] md:col-span-2"
               role="region"
               aria-label="Player profile"
             >
@@ -758,14 +758,14 @@ export default function GamePage() {
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
-                    <p className="font-display font-bold text-white text-base md:text-lg leading-tight truncate">
+                    <p className="font-display font-bold text-slate-800 text-base md:text-lg leading-tight truncate">
                       {displayNameOverride ?? profile?.displayName ?? user?.email ?? "Guest Adventurer"}
                     </p>
                     {user && (
                       <span className="flex-shrink-0 w-2 h-2 rounded-full bg-game-green shadow-[0_0_7px_rgba(34,197,94,0.9)]" aria-label="Online" />
                     )}
                   </div>
-                  <p className="text-white/40 text-xs md:text-sm mt-1 font-body">
+                  <p className="text-slate-500 text-xs md:text-sm mt-1 font-body">
                     {profile
                       ? `Wanderer · Zone ${currentZone} reached`
                       : "Log in to save your progress"}
@@ -815,7 +815,7 @@ export default function GamePage() {
                     <p className="font-display font-black text-coral text-lg leading-none tabular-nums">
                       {streak}
                     </p>
-                    <p className="text-white/35 text-[10px] uppercase tracking-widest font-body">
+                    <p className="text-slate-400 text-[10px] uppercase tracking-widest font-body">
                       Streak
                     </p>
                   </div>
@@ -828,12 +828,12 @@ export default function GamePage() {
                         key={i}
                         className={`block w-2 h-2 rounded-full transition-all duration-300 ${i <= streak % 6
                             ? streak >= 3 ? "bg-gold scale-110 shadow-[0_0_5px_rgba(232,184,75,0.8)]" : "bg-coral"
-                            : "bg-white/15"
+                            : "bg-slate-200"
                           }`}
                       />
                     ))}
                   </div>
-                  <p className="text-white/25 text-[9px] font-body">
+                  <p className="text-slate-400 text-[9px] font-body">
                     {streak >= 3 ? "🏆 Bonus active!" : `${3 - streak} more for bonus`}
                   </p>
                 </div>
@@ -848,10 +848,10 @@ export default function GamePage() {
             {/* Section header */}
             <div className="flex items-center justify-between animate-fade-in lg:mt-40 [animation-delay:0.3s] opacity-0 [animation-fill-mode:forwards]">
               <div>
-                <p className="font-display font-black text-white text-lg md:text-xl">
+                <p className="font-display font-black text-slate-800 text-lg md:text-xl">
                   Choose Your Zone
                 </p>
-                <p className="text-white/35 text-xs font-body mt-0.5">
+                <p className="text-slate-500 text-xs font-body mt-0.5">
                   {ZONES.filter((z) => z.id <= currentZone).length} of {ZONES.length} portals open
                 </p>
               </div>
@@ -880,7 +880,7 @@ export default function GamePage() {
             <div className="relative w-full py-6" role="group" aria-labelledby="zone-label">
   
   {/* Connection Line */}
-  <div className="absolute top-1/2 left-4 right-4 h-[2px] bg-white/10 -translate-y-1/2" />
+  <div className="absolute top-1/2 left-4 right-4 h-[2px] bg-slate-200 -translate-y-1/2" />
 
   {/* Zones */}
   <div className="relative flex items-center justify-between px-2">
@@ -919,7 +919,7 @@ export default function GamePage() {
               ${
                 isActive
                   ? `${zone.activeBg} ${zone.activeBorder} ${zone.activeGlow} scale-105`
-                  : "bg-navy-mid border-white/20"
+                  : "bg-white border-slate-200"
               }
             `}
           >
@@ -927,7 +927,7 @@ export default function GamePage() {
           </div>
 
           {/* Zone Label */}
-          <span className="text-[10px] md:text-xs text-white/60 font-body text-center leading-tight">
+          <span className="text-[10px] md:text-xs text-slate-500 font-body text-center leading-tight">
             {zone.name}
           </span>
         </button>
@@ -947,8 +947,8 @@ export default function GamePage() {
                   <p className={`font-display font-black text-base leading-tight ${selectedZoneInfo.activeText}`}>
                     {selectedZoneInfo.name}
                   </p>
-                  <p className="text-white/40 text-xs font-body mt-0.5">{selectedZoneInfo.tagline}</p>
-                  <p className="text-white/25 text-[10px] font-body mt-0.5 italic">Boss: {selectedZoneInfo.boss}</p>
+                  <p className="text-slate-400 text-xs font-body mt-0.5">{selectedZoneInfo.tagline}</p>
+                  <p className="text-slate-400 text-[10px] font-body mt-0.5 italic">Boss: {selectedZoneInfo.boss}</p>
                 </div>
                 <div className="flex flex-col items-end gap-1.5 flex-shrink-0">
                   <DifficultyStars count={selectedZoneInfo.difficultyStars} colorClass={selectedZoneInfo.activeText} />
@@ -973,7 +973,7 @@ export default function GamePage() {
 
             {/* Guest nudge */}
             {!user && (
-              <p className="text-center text-xs text-white/35 font-body -mt-2 animate-fade-in">
+              <p className="text-center text-xs text-slate-400 font-body -mt-2 animate-fade-in">
                 <a href="/login" className="text-gold font-bold hover:underline">Log in</a>
                 {" "}to save coins, stars & progress
               </p>

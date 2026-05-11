@@ -128,6 +128,7 @@ from `public.users` on every call (TDD §9.1) — a child's token gets a
 | ------------------------- | ------------ | -------------------------------------------------------------------- |
 | `POST  /parent/children`  | parent       | Create a child account. Calls `admin.create_user` with `app_metadata.role='child'` and inserts the matching `public.children` row. Rolls back the auth user on downstream failure. |
 | `GET   /parent/children`  | parent       | List all children belonging to the caller. Returns `{ children: [ChildProfile, ...] }`. Empty list if no children yet. |
+| `GET   /parent/children/{child_id}/tricks` | parent | Return unlocked tricks for one child. `child_id` = `public.children.id` (the `id` from `GET /parent/children`). Returns `404 child_not_found` if the child doesn't exist or belongs to another parent. Response shape same as `GET /child/tricks`. |
 | `GET   /parent/settings`  | parent       | Read the parent's `public.parent_settings` row (auto-created at signup). |
 | `PATCH /parent/settings`  | parent       | Partial-update settings. Server-managed counters (`stars_earned`, `stars_redeemed`, `last_notified_at`) are **not** writable here. |
 
@@ -140,11 +141,12 @@ Full flow diagrams: [../docs/auth-flow.md](../docs/auth-flow.md).
 
 All `/child/*` endpoints require a **child** bearer token. A parent token gets `403 forbidden_role`.
 
-| Method + path         | Auth  | Purpose |
-| --------------------- | ----- | ------- |
-| `GET /child/me`       | child | Return the caller's combined `ChildProfile` (merges `public.users` + `public.children`). |
-| `GET /child/streak`   | child | Return `{ streak_current, streak_best }` — lightweight read without fetching the full profile. |
-| `PATCH /child/streak` | child | Body `{ correct: bool }`. Increments `streak_current` (and promotes `streak_best`) when `correct=true`; resets `streak_current` to 0 when `correct=false`. Returns `{ streak_current, streak_best }`. Uses SELECT-after-UPDATE. |
+| Method + path           | Auth  | Purpose |
+| ----------------------- | ----- | ------- |
+| `GET /child/me`         | child | Return the caller's combined `ChildProfile` (merges `public.users` + `public.children`). |
+| `GET /child/streak`     | child | Return `{ streak_current, streak_best }` — lightweight read without fetching the full profile. |
+| `PATCH /child/streak`   | child | Body `{ correct: bool }`. Increments `streak_current` (and promotes `streak_best`) when `correct=true`; resets `streak_current` to 0 when `correct=false`. Returns `{ streak_current, streak_best }`. Uses SELECT-after-UPDATE. |
+| `GET /child/tricks`     | child | Return all tricks the child has unlocked (`unlocked=true` in `trick_discoveries`). Response: `{ unlocked_tricks: [{ trick_id, name, category, description, insight_count, unlocked_at }] }`. Empty list if none unlocked yet. |
 
 ## /problems endpoints
 

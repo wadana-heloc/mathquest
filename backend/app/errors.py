@@ -117,6 +117,11 @@ class TrickNotFound(APIError):
 # --- Parent / child management -----------------------------------------------
 
 
+class ChildNotFound(APIError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "child_not_found"
+
+
 class ChildCreateFailed(APIError):
     """Something went wrong creating the child after auth.users was made.
 

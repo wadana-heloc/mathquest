@@ -33,6 +33,7 @@ except ImportError:  # pragma: no cover
 from app.errors import (
     APIError,
     ChildCreateFailed,
+    ChildNotFound,
     EmailAlreadyRegistered,
     ForbiddenRole,
     NotAuthenticated,
@@ -46,6 +47,7 @@ from app.schemas.parent import (
     ParentSettings,
     ParentSettingsUpdate,
 )
+from app.schemas.tricks import UnlockedTrick, UnlockedTricksResponse
 from app.security import AuthUser, get_current_user
 from app.supabase_clients import get_admin_supabase
 
@@ -332,6 +334,108 @@ async def list_children(
         profiles.append(_child_profile_from_rows(child_row, user_row))
 
     return ChildrenListResponse(children=profiles)
+
+
+# -----------------------------------------------------------------------------
+# GET /parent/children/{child_id}/tricks — unlocked tricks for one child
+# -----------------------------------------------------------------------------
+
+
+def _require_owned_child(child_id: str, parent_user_id: str) -> dict[str, Any]:
+    """Return the public.children row if the child belongs to this parent.
+
+    Returns 404 child_not_found for both missing and unowned children so we
+    don't leak that a child exists but belongs to someone else.
+    """
+    try:
+        uuid.UUID(child_id)
+    except ValueError:
+        raise ChildNotFound(f"Child '{child_id}' not found.")
+
+    admin = get_admin_supabase()
+
+    child_res = (
+        admin.table("children")
+        .select("id, user_id")
+        .eq("id", child_id)
+        .limit(1)
+        .execute()
+    )
+    if not child_res.data:
+        raise ChildNotFound(f"Child '{child_id}' not found.")
+    child_row = child_res.data[0]
+
+    user_res = (
+        admin.table("users")
+        .select("parent_id")
+        .eq("id", child_row["user_id"])
+        .limit(1)
+        .execute()
+    )
+    if not user_res.data or user_res.data[0]["parent_id"] != parent_user_id:
+        raise ChildNotFound(f"Child '{child_id}' not found.")
+
+    return child_row
+
+
+@router.get(
+    "/children/{child_id}/tricks",
+    response_model=UnlockedTricksResponse,
+    summary="Return all tricks unlocked by a specific child (parent-authed).",
+)
+async def get_child_unlocked_tricks(
+    child_id: str,
+    current: AuthUser = Depends(get_current_user),
+) -> UnlockedTricksResponse:
+    """Return every trick the child has unlocked (``unlocked = true``).
+
+    ``child_id`` is the UUID from ``public.children.id`` (the ``id`` field
+    returned by ``GET /parent/children``).  Returns 404 when the child does
+    not exist or does not belong to this parent.  Returns an empty list when
+    the child exists but has no unlocked tricks yet.
+    """
+    _require_parent(current)
+    child_row = _require_owned_child(child_id, str(current.id))
+
+    admin = get_admin_supabase()
+
+    discoveries_res = (
+        admin.table("trick_discoveries")
+        .select("trick_id, insight_count, unlocked_at")
+        .eq("child_id", child_row["id"])
+        .eq("unlocked", True)
+        .execute()
+    )
+    if not discoveries_res.data:
+        return UnlockedTricksResponse(unlocked_tricks=[])
+
+    trick_ids = [row["trick_id"] for row in discoveries_res.data]
+    tricks_res = (
+        admin.table("tricks")
+        .select("id, name, category, description")
+        .in_("id", trick_ids)
+        .execute()
+    )
+    tricks_map = {row["id"]: row for row in tricks_res.data}
+
+    unlocked = []
+    for discovery in discoveries_res.data:
+        trick = tricks_map.get(discovery["trick_id"])
+        if trick is None:
+            logger.warning("trick '%s' missing from tricks table — skipping", discovery["trick_id"])
+            continue
+        unlocked.append(
+            UnlockedTrick(
+                trick_id=trick["id"],
+                name=trick["name"],
+                category=trick["category"],
+                description=trick["description"],
+                insight_count=discovery["insight_count"],
+                unlocked_at=discovery["unlocked_at"],
+            )
+        )
+
+    return UnlockedTricksResponse(unlocked_tricks=unlocked)
 
 
 # -----------------------------------------------------------------------------

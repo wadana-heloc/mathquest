@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends
 
 from app.errors import APIError, ForbiddenRole, NotAuthenticated
 from app.schemas.parent import ChildProfile, StreakResponse, StreakUpdateRequest
+from app.schemas.tricks import UnlockedTrick, UnlockedTricksResponse
 from app.security import AuthUser, get_current_user
 from app.supabase_clients import get_admin_supabase
 
@@ -143,6 +144,67 @@ def _require_child(current: AuthUser) -> tuple[dict, dict]:
             status_code=500,
         )
     return user_row, child_res.data[0]
+
+
+# -----------------------------------------------------------------------------
+# GET /child/tricks — return tricks the child has unlocked
+# -----------------------------------------------------------------------------
+
+
+@router.get(
+    "/tricks",
+    response_model=UnlockedTricksResponse,
+    summary="Return all tricks the child has unlocked (unlocked=true in trick_discoveries).",
+)
+async def get_my_unlocked_tricks(
+    current: AuthUser = Depends(get_current_user),
+) -> UnlockedTricksResponse:
+    """Return every trick the child has unlocked (``unlocked = true``).
+
+    A trick unlocks after 3 insight detections (correct + fast + no hints).
+    Returns an empty list when no tricks are unlocked yet.
+    """
+    _, child_row = _require_child(current)
+    child_id = child_row["id"]
+    admin = get_admin_supabase()
+
+    discoveries_res = (
+        admin.table("trick_discoveries")
+        .select("trick_id, insight_count, unlocked_at")
+        .eq("child_id", child_id)
+        .eq("unlocked", True)
+        .execute()
+    )
+    if not discoveries_res.data:
+        return UnlockedTricksResponse(unlocked_tricks=[])
+
+    trick_ids = [row["trick_id"] for row in discoveries_res.data]
+    tricks_res = (
+        admin.table("tricks")
+        .select("id, name, category, description")
+        .in_("id", trick_ids)
+        .execute()
+    )
+    tricks_map = {row["id"]: row for row in tricks_res.data}
+
+    unlocked = []
+    for discovery in discoveries_res.data:
+        trick = tricks_map.get(discovery["trick_id"])
+        if trick is None:
+            logger.warning("trick '%s' missing from tricks table — skipping", discovery["trick_id"])
+            continue
+        unlocked.append(
+            UnlockedTrick(
+                trick_id=trick["id"],
+                name=trick["name"],
+                category=trick["category"],
+                description=trick["description"],
+                insight_count=discovery["insight_count"],
+                unlocked_at=discovery["unlocked_at"],
+            )
+        )
+
+    return UnlockedTricksResponse(unlocked_tricks=unlocked)
 
 
 # -----------------------------------------------------------------------------

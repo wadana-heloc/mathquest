@@ -174,7 +174,34 @@ export async function updateStreak(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 5. Fetch the trick currently assigned to this child (current_trick column)
+// 5. Fetch all tricks in the catalogue (GET /tricks)
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface AllTricksResponse {
+  tricks: Array<{ id: string; name: string; category: string; description: string }>
+}
+
+interface UnlockedTricksResponse {
+  unlocked_tricks: Array<{
+    trick_id:      string
+    name:          string
+    category:      string
+    description:   string
+    insight_count: number
+    unlocked_at:   string
+  }>
+}
+
+export async function fetchAllTricks(): Promise<AllTricksResponse> {
+  return apiGet<AllTricksResponse>('/tricks')
+}
+
+export async function fetchUnlockedTricks(): Promise<UnlockedTricksResponse> {
+  return apiGet<UnlockedTricksResponse>('/child/tricks')
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6. Fetch the trick currently assigned to this child (current_trick column)
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function fetchCurrentTrick(): Promise<TrickData | null> {

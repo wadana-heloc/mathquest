@@ -18,13 +18,10 @@ import { useRouter } from 'next/navigation'
 import { ProblemCard } from '@/components/game/ProblemCard'
 import { TricksModal, TrickRevealModal } from '@/components/game/TricksModal'
 import { InsightCelebration } from '@/components/game/InsightCelebration'
-import { fetchProblem, updateStreak, advanceZone, fetchCurrentTrick } from '@/lib/game/actions'
+import { fetchProblem, updateStreak, advanceZone, fetchCurrentTrick, fetchUnlockedTricks } from '@/lib/game/actions'
 import type { Problem, AttemptResult, HintResult, TrickData } from '@/types/game'
 import { ZONE1_EVENTS } from '@/lib/phaser/Zone1Scene'
 import { useChildProfile } from '@/lib/hooks/useChildProfile'
-
-// Dummy discovered trick IDs — replace with real data later
-const DUMMY_DISCOVERED = ['A1', 'A2', 'A4', 'B4', 'B5', 'C6', 'D2', 'D3']
 
 //
 interface ProblemTrigger {
@@ -295,7 +292,14 @@ function MathModal({
 function ZoneCompleteScreen({ onNext, onHub, sessionCoins }: { onNext: () => void; onHub: () => void; sessionCoins: number }) {
   return (
     <div className="absolute inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-md">
-      <div className="text-center px-8" style={{ animation: 'zoomIn 0.5s ease forwards' }}>
+      <div className="text-center px-8 animate-[zoomIn_0.5s_ease_forwards]">
+        <div className="flex justify-center mb-2">
+          <img
+            src="/child.jpg"
+            alt="You celebrating"
+            className="w-28 h-28 rounded-full object-cover border-4 border-yellow-400 shadow-xl shadow-yellow-400/40 animate-[zoomIn_0.6s_0.1s_ease_both]"
+          />
+        </div>
         <div className="text-7xl mb-6 animate-bounce">🏆</div>
         <h1 className="text-5xl font-black text-white mb-3 tracking-tight">Zone 1 Complete!</h1>
         <p className="text-yellow-400 text-xl font-bold mb-2">Pebble Shore — Conquered!</p>
@@ -399,6 +403,7 @@ export default function Zone1Game() {
   const [showControls, setShowControls] = useState(false)
   const [showTricks, setShowTricks] = useState(false)
   const [capReached, setCapReached] = useState(false)
+  const [tricksCount, setTricksCount] = useState(0)
   const [trickData, setTrickData] = useState<TrickData | null>(null)
   const [showInsight, setShowInsight] = useState(false)
   const insightResultRef = useRef<AttemptResult | null>(null)
@@ -407,6 +412,10 @@ export default function Zone1Game() {
 
   useEffect(() => {
     setShowControls('ontouchstart' in window || navigator.maxTouchPoints > 0)
+  }, [])
+
+  useEffect(() => {
+    fetchUnlockedTricks().then(d => setTricksCount(d.unlocked_tricks.length)).catch(() => {})
   }, [])
 
 
@@ -603,7 +612,7 @@ export default function Zone1Game() {
       <ProgressHUD solved={progress.solved} total={progress.total} />
       <BossHUD phase={bossPhase} visible={bossVisible} />
 
-      <CoinStreak coins={coins} sessionCoins={sessionCoins} streak={streak} capReached={capReached} onTricks={() => setShowTricks(true)} tricksCount={DUMMY_DISCOVERED.length} />
+      <CoinStreak coins={coins} sessionCoins={sessionCoins} streak={streak} capReached={capReached} onTricks={() => setShowTricks(true)} tricksCount={tricksCount} />
       
       {/* Back to hub
       {!activeTrigger && (
@@ -658,10 +667,7 @@ export default function Zone1Game() {
       )}
 
       {showTricks && (
-        <TricksModal
-          discoveredTrickIds={DUMMY_DISCOVERED}
-          onClose={() => setShowTricks(false)}
-        />
+        <TricksModal onClose={() => setShowTricks(false)} />
       )}
     </div>
   )

@@ -266,10 +266,6 @@ import { StoryButton } from "@/components/game/StoryModal";
 import { AudioControls, loadAudioSettings, AUDIO_EVENT, type AudioSettings } from "@/components/game/AudioControlModal";
 import { TricksButton } from "@/components/game/TricksModal";
 
-// Dummy discovered trick IDs — replace with real data from player profile later
-const DUMMY_DISCOVERED = ['A1', 'A2', 'A4', 'B4', 'B5', 'C6', 'D2', 'D3'];
-
-
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 interface ZoneInfo {
@@ -663,7 +659,7 @@ export default function GamePage() {
       </div>
       <div className="fixed top-4 right-4 z-40 flex items-center gap-2">
         <AudioControls />
-        <TricksButton discoveredTrickIds={DUMMY_DISCOVERED} />
+        <TricksButton />
         <StoryButton />
         <LogoutButton />
       </div>
@@ -748,12 +744,8 @@ export default function GamePage() {
               <div className="flex items-center gap-4 mb-5">
                 <div className="relative w-14 h-14 md:w-16 md:h-16 flex-shrink-0">
                   <div className="absolute inset-0 rounded-full border-2 border-gold/40 animate-pulse-ring" />
-                  <div className="w-full h-full rounded-full bg-gold/14 border-2 border-gold/35 flex items-center justify-center">
-                    <span className="font-display font-black text-gold text-lg md:text-xl">
-                      {(displayNameOverride ?? profile?.displayName)
-                        ? (displayNameOverride ?? profile!.displayName).slice(0, 2).toUpperCase()
-                        : "👤"}
-                    </span>
+                  <div className="w-full h-full rounded-full border-2 border-gold/35 overflow-hidden">
+                    <img src="/child.jpg" alt="Your avatar" className="w-full h-full object-cover" />
                   </div>
                 </div>
                 <div className="min-w-0 flex-1">

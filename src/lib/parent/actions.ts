@@ -2,17 +2,19 @@
 
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
-import { apiGet, apiPost } from '@/lib/api/client'
+import { apiGet, apiPost, apiPatch } from '@/lib/api/client'
 import type { AddChildForm } from '@/types/parent'
 
 export type DBChild = {
-  id: string    // user_id (auth ID) — used for deleteChild
+  id: string             // user_id (auth ID) — used for deleteChild
+  game_id: string        // children.id (game row) — used for game API endpoints
   name: string
   email: string
   grade: number
   dob: string
   zone: number
   coins: number
+  difficulty_ceiling: number
 }
 
 // ── Backend response shapes ───────────────────────────────────────────────────
@@ -50,12 +52,14 @@ interface ChildCreateResponse {
 function toDBChild(c: ApiChildProfile): DBChild {
   return {
     id: c.user_id,
+    game_id: c.id,
     name: c.display_name,
     email: c.email,
     grade: c.grade,
     dob: c.date_of_birth ?? '',
     zone: c.current_zone,
     coins: c.coins,
+    difficulty_ceiling: c.difficulty_ceiling,
   }
 }
 
@@ -146,6 +150,40 @@ export async function generateStory(
     return { story: data }
   } catch (err) {
     return { error: err instanceof Error ? err.message : 'Story generation failed.' }
+  }
+}
+
+// ── Update Difficulty Ceiling ─────────────────────────────────────────────────
+
+export async function updateDifficultyCeiling(
+  childGameId: string,
+  ceiling: number
+): Promise<{ error?: string }> {
+  try {
+    await apiPatch(`/parent/children/${childGameId}/difficulty`, { difficulty_ceiling: ceiling })
+    return {}
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Failed to update difficulty ceiling.' }
+  }
+}
+
+// ── Fetch Child Tricks ────────────────────────────────────────────────────────
+
+export interface ChildTrick {
+  trick_id: string
+  name: string
+  category: string
+  description: string
+  insight_count: number
+  unlocked_at: string
+}
+
+export async function fetchChildTricks(childId: string): Promise<ChildTrick[]> {
+  try {
+    const data = await apiGet<{ unlocked_tricks: ChildTrick[] }>(`/parent/children/${childId}/tricks`)
+    return data.unlocked_tricks
+  } catch {
+    return []
   }
 }
 

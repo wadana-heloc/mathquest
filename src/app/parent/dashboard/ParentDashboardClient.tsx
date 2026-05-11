@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useTransition, useRef } from "react";
+import { useState, useEffect, useTransition, useRef } from "react";
 import { logout } from "@/lib/auth/actions";
-import { addChild, deleteChild, generateStory, type DBChild, type GeneratedStory, type StoryChapter } from "@/lib/parent/actions";
+import { addChild, deleteChild, generateStory, fetchChildTricks, updateDifficultyCeiling, type DBChild, type GeneratedStory, type StoryChapter, type ChildTrick } from "@/lib/parent/actions";
 import AddChildModal from "@/components/parent/AddChildModal";
 import type { AddChildForm } from "@/types/parent";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Child {
   id: string;
+  game_id: string;
   name: string;
   email: string;
   grade: number;
@@ -48,6 +49,7 @@ const ZONE_NAMES: Record<number, string> = {
 function dbChildToChild(d: DBChild): Child {
   return {
     id: d.id,
+    game_id: d.game_id,
     name: d.name,
     email: d.email,
     grade: d.grade,
@@ -57,7 +59,7 @@ function dbChildToChild(d: DBChild): Child {
     coins: d.coins,
     lastActive: "Recently",
     settings: {
-      diffCeiling: 5,
+      diffCeiling: d.difficulty_ceiling,
       autoScaling: true,
       dailyLimitMins: 45,
       sessionLimitMins: 30,
@@ -89,13 +91,6 @@ const TABS: { id: Tab; label: string; emoji: string }[] = [
   { id: "content",   label: "Stories",   emoji: "📖" },
   { id: "reset",     label: "Reset",     emoji: "🔄" },
 ];
-
-const CAT: Record<string, string> = {
-  A: "bg-teal/15 text-teal",
-  B: "bg-violet/15 text-violet",
-  C: "bg-gold/15 text-yellow-700",
-  D: "bg-coral/15 text-coral",
-};
 
 // ─── Sub-components ───────────────────────────────────────────────────────────
 function Avatar({ name, size = "md" }: { name: string; size?: "sm" | "md" | "lg" }) {
@@ -306,6 +301,64 @@ function NumberInput({
   );
 }
 
+// ─── Correct Rate Donut ───────────────────────────────────────────────────────
+function CorrectRateDonut({ correctPct = 72 }: { correctPct?: number }) {
+  const incorrectPct = 100 - correctPct;
+  const r = 36;
+  const circ = 2 * Math.PI * r;
+  const gap = 6;
+  const correctLen = circ * (correctPct / 100) - gap;
+  const incorrectLen = circ * (incorrectPct / 100) - gap;
+
+  return (
+    <SectionCard title="Answer Accuracy">
+      <div className="flex flex-col items-center gap-5 py-1">
+        <div className="relative w-40 h-40 drop-shadow-sm">
+          <svg viewBox="0 0 100 100" className="w-full h-full -rotate-90" aria-hidden="true">
+            <circle cx="50" cy="50" r={r} fill="none" stroke="#f5f5f4" strokeWidth="13" />
+            <circle
+              cx="50" cy="50" r={r} fill="none"
+              stroke="#f73160"
+              strokeWidth="13"
+              strokeDasharray={`${Math.max(0, incorrectLen)} ${circ}`}
+              strokeDashoffset={-(correctLen + gap)}
+              strokeLinecap="round"
+            />
+            <circle
+              cx="50" cy="50" r={r} fill="none"
+              stroke="#2DD4BF"
+              strokeWidth="13"
+              strokeDasharray={`${Math.max(0, correctLen)} ${circ}`}
+              strokeLinecap="round"
+            />
+          </svg>
+          <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+            <span className="font-display font-800 text-3xl text-stone-800 leading-none tabular-nums">{correctPct}%</span>
+            <span className="text-[11px] text-stone-400 font-semibold mt-1">correct</span>
+          </div>
+        </div>
+
+        <div className="w-full divide-y divide-stone-50 border border-stone-100 rounded-xl overflow-hidden">
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0 bg-teal" />
+              <span className="text-xs font-semibold text-stone-500">Correct</span>
+            </div>
+            <span className="font-display font-800 text-base text-teal tabular-nums">{correctPct}%</span>
+          </div>
+          <div className="flex items-center justify-between px-4 py-3">
+            <div className="flex items-center gap-2.5">
+              <div className="w-2.5 h-2.5 rounded-full flex-shrink-0  bg-[#f73160]" />
+              <span className="text-xs font-semibold text-stone-500">Incorrect</span>
+            </div>
+            <span className="font-display font-800 text-base text-[#f73160] tabular-nums">{incorrectPct}%</span>
+          </div>
+        </div>
+      </div>
+    </SectionCard>
+  );
+}
+
 // ─── Tab sections ─────────────────────────────────────────────────────────────
 function OverviewTab({ child }: { child: Child }) {
   const max = Math.max(...child.activity.map(d => d.attempted), 1);
@@ -339,29 +392,10 @@ function OverviewTab({ child }: { child: Child }) {
           </SectionCard>
         </div>
 
-        <SectionCard title="Recent Sessions">
-          {child.sessions.length === 0 ? (
-            <p className="text-xs text-stone-400 text-center py-4">No sessions yet</p>
-          ) : (
-            <div className="space-y-2">
-              {child.sessions.slice(0, 4).map(s => (
-                <div key={s.id} className="flex items-center justify-between py-2 border-b border-stone-50 last:border-0">
-                  <div>
-                    <div className="text-xs font-semibold text-stone-700">{s.date}</div>
-                    <div className="text-[10px] text-stone-400 mt-0.5">{s.mins} min · {s.problems} problems</div>
-                  </div>
-                  <div className="text-right">
-                    <div className="text-xs font-bold text-amber-500">+{s.coins}</div>
-                    <div className="text-[10px] text-stone-400">{s.rate}%</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </SectionCard>
+        <CorrectRateDonut correctPct={65} />
       </div>
 
-      <SectionCard title="Boss Completions" badge={<Pill label={`${child.bosses.length} cleared`} color="bg-coral/10 text-coral" />}>
+      {/* <SectionCard title="Boss Completions" badge={<Pill label={`${child.bosses.length} cleared`} color="bg-coral/10 text-coral" />}>
         {child.bosses.length === 0 ? (
           <p className="text-xs text-stone-400 text-center py-4">No bosses defeated yet</p>
         ) : (
@@ -378,9 +412,102 @@ function OverviewTab({ child }: { child: Child }) {
             ))}
           </div>
         )}
-      </SectionCard>
+      </SectionCard> */}
     </div>
   );
+}
+
+// ─── Trick Discoveries helpers ────────────────────────────────────────────────
+const TRICK_PALETTE = [
+  { bg: 'bg-teal/10',    text: 'text-teal',      border: 'border-teal/20'   },
+  { bg: 'bg-violet/10',  text: 'text-violet',    border: 'border-violet/20' },
+  { bg: 'bg-amber-50',   text: 'text-amber-600', border: 'border-amber-200' },
+  { bg: 'bg-coral/10',   text: 'text-coral',     border: 'border-coral/20'  },
+  { bg: 'bg-blue-50',    text: 'text-blue-600',  border: 'border-blue-200'  },
+  { bg: 'bg-rose-50',    text: 'text-rose-500',  border: 'border-rose-200'  },
+]
+
+function trickCatStyle(category: string) {
+  const idx = [...category].reduce((a, c) => a + c.charCodeAt(0), 0) % TRICK_PALETTE.length
+  return TRICK_PALETTE[idx]
+}
+
+function trickTimeAgo(iso: string): string {
+  const secs = Math.floor((Date.now() - new Date(iso).getTime()) / 1000)
+  if (secs < 60) return 'just now'
+  const mins = Math.floor(secs / 60)
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  const days = Math.floor(hrs / 24)
+  if (days < 30) return `${days}d ago`
+  return `${Math.floor(days / 30)}mo ago`
+}
+
+function TrickDiscoveriesSection({ childId }: { childId: string }) {
+  const [tricks, setTricks] = useState<ChildTrick[]>([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    setLoading(true)
+    fetchChildTricks(childId)
+      .then(data => setTricks([...data].sort((a, b) => new Date(b.unlocked_at).getTime() - new Date(a.unlocked_at).getTime())))
+      .finally(() => setLoading(false))
+  }, [childId])
+
+  return (
+    <SectionCard
+      title="Trick Discoveries"
+      badge={loading ? undefined : <Pill label={`${tricks.length} / 25 unlocked`} color="bg-violet/10 text-violet" />}
+    >
+      {loading ? (
+        <div className="space-y-2.5">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="h-[72px] bg-stone-100 rounded-xl animate-pulse" />
+          ))}
+        </div>
+      ) : tricks.length === 0 ? (
+        <div className="py-6 text-center">
+          <div className="text-3xl mb-2">✨</div>
+          <p className="text-xs font-semibold text-stone-500">No tricks discovered yet</p>
+          <p className="text-[11px] text-stone-400 mt-0.5 leading-relaxed">
+            Tricks unlock when the child solves problems with insight
+          </p>
+        </div>
+      ) : (
+        <div className={`space-y-2 ${tricks.length > 4 ? "max-h-[340px] overflow-y-auto pr-1" : ""}`}>
+          {tricks.map(t => {
+            const s = trickCatStyle(t.category)
+            return (
+              <div key={t.trick_id} className={`p-3 rounded-xl border ${s.bg} ${s.border}`}>
+                <div className="flex items-start gap-2.5">
+                  <span className={`mt-0.5 px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wide flex-shrink-0 bg-white/70 ${s.text}`}>
+                    {t.category}
+                  </span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-bold text-stone-800 truncate">{t.name}</span>
+                      {t.insight_count > 0 && (
+                        <span className="flex-shrink-0 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-600 whitespace-nowrap">
+                          ✦ {t.insight_count}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-stone-500 mt-0.5 line-clamp-2 leading-relaxed">
+                      {t.description}
+                    </p>
+                    <div className="text-[10px] text-stone-400 mt-1.5 text-right">
+                      {trickTimeAgo(t.unlocked_at)}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </SectionCard>
+  )
 }
 
 function AnalyticsTab({ child }: { child: Child }) {
@@ -428,24 +555,10 @@ function AnalyticsTab({ child }: { child: Child }) {
           )}
         </SectionCard>
 
-        <SectionCard title="Trick Discoveries" badge={<Pill label={`${child.tricks.length} / 25 unlocked`} color="bg-violet/10 text-violet" />}>
-          {child.tricks.length === 0 ? (
-            <p className="text-xs text-stone-400 text-center py-4">No tricks discovered yet</p>
-          ) : (
-            <div className="space-y-2">
-              {child.tricks.map(t => (
-                <div key={t.id} className="flex items-center gap-2.5 p-2.5 bg-stone-50 rounded-xl">
-                  <div className={`w-6 h-6 rounded-lg flex items-center justify-center text-[10px] font-bold flex-shrink-0 ${CAT[t.cat]}`}>{t.cat}</div>
-                  <span className="text-xs font-medium text-stone-700 flex-1 truncate">{t.name}</span>
-                  <span className="text-[10px] text-stone-400">{t.date}</span>
-                </div>
-              ))}
-            </div>
-          )}
-        </SectionCard>
+        <TrickDiscoveriesSection childId={child.game_id} />
       </div>
 
-      <SectionCard title="Session History">
+      {/* <SectionCard title="Session History">
         {child.sessions.length === 0 ? (
           <p className="text-xs text-stone-400 text-center py-4">No sessions yet</p>
         ) : (
@@ -460,9 +573,9 @@ function AnalyticsTab({ child }: { child: Child }) {
             ))}
           </div>
         )}
-      </SectionCard>
+      </SectionCard> */}
 
-      <SectionCard title="Boss Completion Log" badge={<Pill label={`${child.bosses.length} cleared`} color="bg-coral/10 text-coral" />}>
+      {/* <SectionCard title="Boss Completion Log" badge={<Pill label={`${child.bosses.length} cleared`} color="bg-coral/10 text-coral" />}>
         {child.bosses.length === 0 ? (
           <p className="text-xs text-stone-400 text-center py-4">No bosses defeated yet</p>
         ) : (
@@ -479,23 +592,36 @@ function AnalyticsTab({ child }: { child: Child }) {
             ))}
           </div>
         )}
-      </SectionCard>
+      </SectionCard> */}
     </div>
   );
 }
 
-function SettingsTab({ child, onSave, onAudioChange }: {
+function SettingsTab({ child, childGameId, onSave, onAudioChange }: {
   child: Child;
+  childGameId: string;
   onSave: (s: Child["settings"]) => void;
   onAudioChange: (audio: Child["audio"]) => void;
 }) {
   const [cfg, setCfg] = useState({ ...child.settings });
   const [saved, setSaved] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
   const set = <K extends keyof Child["settings"]>(k: K, v: Child["settings"][K]) => {
     setCfg(p => ({ ...p, [k]: v }));
     setSaved(false);
+    setSaveError(null);
   };
-  const save = () => { onSave(cfg); setSaved(true); setTimeout(() => setSaved(false), 2000); };
+  const save = async () => {
+    setSaving(true);
+    setSaveError(null);
+    const result = await updateDifficultyCeiling(childGameId, cfg.diffCeiling);
+    setSaving(false);
+    if (result.error) { setSaveError(result.error); return; }
+    onSave(cfg);
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
 
   const handleUpload = (file: File, ctx: AudioContext) => {
     const newTrack: Child["audio"][number] = {
@@ -542,7 +668,7 @@ function SettingsTab({ child, onSave, onAudioChange }: {
           </div>
         </SectionCard>
 
-        <SectionCard title="⏱️ Time Limits">
+        {/* <SectionCard title="⏱️ Time Limits">
           <p className="text-xs text-stone-400 mb-4">Set daily and per-session maximums. Soft warning at 80%, hard exit at 100%.</p>
           <NumberInput label="Daily Maximum" unit="min" min={10} max={180} value={cfg.dailyLimitMins} onChange={v => set("dailyLimitMins", v)} />
           <NumberInput label="Per-Session Maximum" unit="min" min={5} max={90} value={cfg.sessionLimitMins} onChange={v => set("sessionLimitMins", v)} />
@@ -556,29 +682,10 @@ function SettingsTab({ child, onSave, onAudioChange }: {
               <p className="text-[11px] text-red-600 leading-relaxed">Hard save-and-exit at <strong>100%</strong>. Child cannot override.</p>
             </div>
           </div>
-        </SectionCard>
+        </SectionCard> */}
 
-        <SectionCard title="📈 Difficulty Auto-Scaling">
-          <div className="flex items-center justify-between p-4 bg-stone-50 rounded-xl mb-4">
-            <div>
-              <div className="text-sm font-semibold text-stone-700">Auto-Scaling</div>
-              <div className="text-xs text-stone-400 mt-0.5">{cfg.autoScaling ? "System advances zones automatically" : "Manual zone advancement only"}</div>
-            </div>
-            <Toggle on={cfg.autoScaling} onChange={v => set("autoScaling", v)} label="auto-scaling" />
-          </div>
-          <div className="p-3.5 bg-teal/5 border border-teal/20 rounded-xl">
-            <div className="text-xs font-semibold text-stone-700 mb-1">Rule</div>
-            <p className="text-[11px] text-stone-500 leading-relaxed">Zone advances when child sustains <strong className="text-stone-700">≥ 80% correct</strong> over the last <strong className="text-stone-700">10 problems</strong> at the current difficulty level.</p>
-          </div>
-          {!cfg.autoScaling && (
-            <div className="mt-3 p-3.5 bg-amber-50 border border-amber-100 rounded-xl">
-              <div className="text-xs font-semibold text-stone-700 mb-1">Manual mode active</div>
-              <p className="text-[11px] text-stone-500">Zone will only advance when you approve it manually.</p>
-            </div>
-          )}
-        </SectionCard>
 
-        <SectionCard
+               <SectionCard
           title="🔊 Audio Management"
           badge={child.audio.length > 0 ? <Pill label={`${child.audio.length} track${child.audio.length !== 1 ? "s" : ""}`} color="bg-teal/10 text-teal" /> : undefined}
         >
@@ -629,12 +736,37 @@ function SettingsTab({ child, onSave, onAudioChange }: {
             </div>
           )}
         </SectionCard>
+
+        <SectionCard title="📈 Difficulty Auto-Scaling">
+          <div className="flex items-center justify-between p-4 bg-stone-50 rounded-xl mb-4">
+            <div>
+              <div className="text-sm font-semibold text-stone-700">Auto-Scaling</div>
+              <div className="text-xs text-stone-400 mt-0.5">{cfg.autoScaling ? "System advances zones automatically" : "Manual zone advancement only"}</div>
+            </div>
+            <Toggle on={cfg.autoScaling} onChange={v => set("autoScaling", v)} label="auto-scaling" />
+          </div>
+          <div className="p-3.5 bg-teal/5 border border-teal/20 rounded-xl">
+            <div className="text-xs font-semibold text-stone-700 mb-1">Rule</div>
+            <p className="text-[11px] text-stone-500 leading-relaxed">Zone advances when child sustains <strong className="text-stone-700">≥ 80% correct</strong> over the last <strong className="text-stone-700">10 problems</strong> at the current difficulty level.</p>
+          </div>
+          {!cfg.autoScaling && (
+            <div className="mt-3 p-3.5 bg-amber-50 border border-amber-100 rounded-xl">
+              <div className="text-xs font-semibold text-stone-700 mb-1">Manual mode active</div>
+              <p className="text-[11px] text-stone-500">Zone will only advance when you approve it manually.</p>
+            </div>
+          )}
+        </SectionCard>
+
+ 
       </div>
 
-      <div className="flex justify-end">
-        <button type="button" onClick={save}
-          className={`h-11 px-8 rounded-xl text-sm font-display font-800 transition-all shadow-sm ${saved ? "bg-teal text-white" : "bg-primary text-white hover:bg-navy-light"}`}>
-          {saved ? "✓ Saved!" : "Save Settings"}
+      <div className="flex flex-col items-end gap-2">
+        {saveError && (
+          <p className="text-xs text-red-500 font-medium">{saveError}</p>
+        )}
+        <button type="button" onClick={save} disabled={saving}
+          className={`h-11 px-8 rounded-xl text-sm font-display font-800 transition-all shadow-sm disabled:opacity-60 ${saved ? "bg-teal text-white" : "bg-primary text-white hover:bg-navy-light"}`}>
+          {saving ? "Saving…" : saved ? "✓ Saved!" : "Save Settings"}
         </button>
       </div>
     </div>
@@ -1205,7 +1337,7 @@ export default function ParentDashboardClient({ parentName, parentEmail, dbChild
               <div className="pb-6">
                 {tab === "overview"  && <OverviewTab child={child} />}
                 {tab === "analytics" && <AnalyticsTab child={child} />}
-                {tab === "settings"  && <SettingsTab child={child} onSave={s => updateChild(child.id, { settings: s })} onAudioChange={audio => updateChild(child.id, { audio })} />}
+                {tab === "settings"  && <SettingsTab child={child} childGameId={child.game_id} onSave={s => updateChild(child.id, { settings: s })} onAudioChange={audio => updateChild(child.id, { audio })} />}
                 {tab === "content" && (
                   <ContentTab childId={child.id} childName={child.name} />
                 )}

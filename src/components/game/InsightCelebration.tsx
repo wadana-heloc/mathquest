@@ -90,6 +90,12 @@ export function InsightCelebration({ coins_delta, onDone }: InsightCelebrationPr
 
       {/* Content */}
       <div className="relative flex flex-col items-center gap-5 px-8 text-center">
+        {/* Child avatar */}
+        <img
+          src="/child.jpg"
+          alt="You"
+          className="w-20 h-20 rounded-full object-cover border-4 border-violet-400 shadow-lg shadow-violet-500/50 animate-[insightPop_0.65s_cubic-bezier(0.175,0.885,0.32,1.275)_forwards]"
+        />
         {/* Main word */}
         <div
           className="font-black uppercase leading-none select-none"

@@ -89,10 +89,9 @@ from typing import List
 # Within get_eligible_tricks this order determines which new tricks are introduced
 # first when multiple locked tricks have their prerequisites satisfied.
 TRICK_SEQUENCE = [
-    "A1", "A2", "A3", "A4", "A5", "A6", "A7",
-    "B1", "B2", "B3", "B4", "B5", "B6",
-    "C1", "C2", "C3", "C4", "C5", "C6", "C7",
-    "D1", "D2", "D3", "D4", "D5",
+    "C4", "C1", "C5", "B1", "C2", "A2", "C3", "A1", "B3", "A3",
+    "A7", "C7", "D3", "B5", "C6", "A4", "D5", "A5", "D1", "B4",
+    "D2", "A6", "B2", "B6", "D4",
 ]
 
 # Learning prerequisite graph — maps each trick to the tricks a child must have
@@ -115,7 +114,7 @@ PREREQUISITES = {
     "C1": [],
     "C2": [],
     "C3": ["C2"],        # benchmark numbers extend complement-to-100 (C2)
-    "C4": ["A3"],        # near-doubles uses doubling knowledge (A3)
+    "C4": [],            # near-doubles is introductory — no prerequisite required
     "C5": [],
     "C6": ["C3"],        # estimation and bounds uses benchmark anchors (C3)
     "C7": ["C1"],        # left-to-right multiplication extends chunking (C1)
@@ -123,7 +122,7 @@ PREREQUISITES = {
     "D2": ["B3"],        # state transitions build on conservation of sum (B3)
     "D3": ["B3"],        # balance/equilibrium IS conservation of sum in algebra (B3)
     "D4": ["A3"],        # geometric series intuition extends doubling chains (A3)
-    "D5": ["A5"],        # triangular numbers connect to sum of first n odds (A5)
+    "D5": [],            # triangular numbers is introductory — no prerequisite required
 }
 
 
@@ -199,6 +198,17 @@ def get_eligible_tricks(
             break
 
     return struggling + solid + new_tricks
+
+
+def get_initial_trick() -> str:
+    # What: returns the first trick a brand-new child should start with.
+    #       The backend calls this once at account creation to initialise
+    #       current_trick in the DB. Keeping this here (not hardcoded in the
+    #       backend) means the starting trick automatically stays in sync with
+    #       TRICK_SEQUENCE — changing the ordering never requires a backend change.
+    # Return: str — the first trick ID in TRICK_SEQUENCE (currently "C4")
+    # Example output: "C4"
+    return TRICK_SEQUENCE[0]
 
 
 def compute_session_adjustment(

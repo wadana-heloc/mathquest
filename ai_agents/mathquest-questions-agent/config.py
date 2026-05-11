@@ -23,7 +23,8 @@ MODEL_NAME = "claude-sonnet-4-5"
 AGENT1_MAX_TOKENS = 1000
 
 # int — max tokens Agent 2 (Reviewer) may produce; approval JSON or full corrected problem
-AGENT2_MAX_TOKENS = 1200
+# Set higher than Agent 1 because a rejection must include the full corrected problem JSON
+AGENT2_MAX_TOKENS = 1500
 
 
 # ---------------------------------------------------------------------------

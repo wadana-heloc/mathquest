@@ -90,20 +90,22 @@ No markdown fences, no explanation, no extra text — just the JSON.
 
 ## Output Schema
 
-{
-  "approved": true,
-  "issues": [],
-  "corrected_problem": null
-}
+When all checks pass:
+{"approved": true, "issues": [], "corrected_problem": null}
 
-- If all checks pass: approved=true, issues=[], corrected_problem=null
-- If checks fail: approved=false, issues=[list of specific problems found]
-- If the problem can be corrected: provide corrected_problem as the full fixed JSON
-- If the math is fundamentally wrong and cannot be patched: corrected_problem=null
+When any check fails — you MUST provide the corrected problem:
+{"approved": false, "issues": ["<specific issue 1>", "..."], "corrected_problem": { <full fixed problem JSON> }}
+
+CRITICAL: When approved is false, you MUST always include corrected_problem.
+- Fix every issue you identified and return the complete corrected problem with all fields.
+- If the math answer is wrong, compute the correct answer and rewrite brute_force_path and shortcut_path accordingly.
+- If a hint violates a rule, rewrite that hint to comply — do not leave it as-is.
+- If the problem is so broken it cannot be patched (e.g. the trick_id does not match the problem at all), rewrite the entire problem from scratch using the same trick_id and difficulty value.
+- Never return corrected_problem: null when approved is false.
 
 ## Rules
-- A wrong answer is always a hard rejection — never approve incorrect math
-- A hint that directly states the answer is always a hard rejection
+- A wrong answer is always a hard rejection — compute the correct answer and fix it in corrected_problem
+- A hint that directly states the answer is always a hard rejection — rewrite the hint in corrected_problem
 - Be strict: this content is shown to children"""
 
 

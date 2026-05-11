@@ -134,6 +134,10 @@ from `public.users` on every call (TDD §9.1) — a child's token gets a
 | `GET   /parent/children/{child_id}/analysis/week` | parent | Day-by-day breakdown for the current calendar week (Mon–Sun UTC). Returns `{ child_id, week_start, week_end, days: [{ day, date, attempted, correct }] }`. Future days in the week return zeros. |
 | `GET   /parent/children/{child_id}/analysis/concepts` | parent | Returns all trick categories the child has attempted with error rates. `error_rate` = % of attempts where `previously_failed=true`, rounded to nearest integer. Sorted highest error rate first. Returns `{ child_id, concepts: [{ concept, attempted, error_rate }] }`. Empty list if no attempts yet. |
 | `GET   /parent/children/{child_id}/analysis/{period}` | parent | Activity summary for one child. `period` = `7d` or `30d` (rolling window from now). Returns `{ child_id, period, attempted, correct, hints_used }`. `attempted` = distinct problems attempted in window; `correct` = first-try correct answers (`solved_correctly=true` AND `previously_failed=false`); `hints_used` = total hint tiers used. |
+| `POST  /parent/children/{child_id}/reset/zone`   | parent | Reset `children.current_zone` to 1. Returns `{ success: true }`. |
+| `POST  /parent/children/{child_id}/reset/coins`  | parent | Reset `children.coins` to 0. Returns `{ success: true }`. |
+| `POST  /parent/children/{child_id}/reset/tricks` | parent | Delete all `trick_discoveries` rows for the child and set `children.current_trick = 'C4'`. Irreversible. Returns `{ success: true }`. |
+| `DELETE /parent/children/{child_id}`             | parent | Permanently delete the child account. Body: `{ "confirm": true }` required — returns `422 delete_not_confirmed` otherwise. Cascades through auth.users → public.users → public.children. Returns 204. **Irreversible.** |
 | `GET   /parent/settings`  | parent       | Read the parent's `public.parent_settings` row (auto-created at signup). |
 | `PATCH /parent/settings`  | parent       | Partial-update settings. Server-managed counters (`stars_earned`, `stars_redeemed`, `last_notified_at`) are **not** writable here. |
 

@@ -144,6 +144,22 @@ class DayAnalysis(BaseModel):
     correct: int
 
 
+class ActionSuccessResponse(BaseModel):
+    """Generic success response for destructive child management actions."""
+
+    success: bool = True
+
+
+class DeleteChildRequest(BaseModel):
+    """Body for ``DELETE /parent/children/{child_id}``.
+
+    The parent must explicitly pass ``confirm=true`` to prevent accidental
+    deletion — this operation is irreversible.
+    """
+
+    confirm: bool
+
+
 class DailyProblemEntry(BaseModel):
     stem: str
     duration: float | None

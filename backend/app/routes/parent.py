@@ -42,6 +42,7 @@ from app.errors import (
     WeakPassword,
 )
 from app.schemas.parent import (
+    ActionSuccessResponse,
     AnalysisPeriod,
     ChildAnalysisResponse,
     ChildCreateRequest,
@@ -56,6 +57,7 @@ from app.schemas.parent import (
     DailyProblemEntry,
     DailyShortestEntry,
     DayAnalysis,
+    DeleteChildRequest,
     ParentSettings,
     ParentSettingsUpdate,
     WeekAnalysisResponse,
@@ -877,6 +879,104 @@ async def get_child_analysis(
         correct=correct,
         hints_used=hints,
     )
+
+
+# -----------------------------------------------------------------------------
+# Child account management — reset / delete
+# -----------------------------------------------------------------------------
+
+
+@router.post(
+    "/children/{child_id}/reset/zone",
+    response_model=ActionSuccessResponse,
+    summary="Reset the child's zone back to 1 (parent-authed).",
+)
+async def reset_child_zone(
+    child_id: str,
+    current: AuthUser = Depends(get_current_user),
+) -> ActionSuccessResponse:
+    """Set ``children.current_zone = 1`` for the specified child."""
+    _require_parent(current)
+    child_row = _require_owned_child(child_id, str(current.id))
+    get_admin_supabase().table("children").update({"current_zone": 1}).eq(
+        "id", child_row["id"]
+    ).execute()
+    return ActionSuccessResponse()
+
+
+@router.post(
+    "/children/{child_id}/reset/coins",
+    response_model=ActionSuccessResponse,
+    summary="Reset the child's coin balance to 0 (parent-authed).",
+)
+async def reset_child_coins(
+    child_id: str,
+    current: AuthUser = Depends(get_current_user),
+) -> ActionSuccessResponse:
+    """Set ``children.coins = 0`` for the specified child."""
+    _require_parent(current)
+    child_row = _require_owned_child(child_id, str(current.id))
+    get_admin_supabase().table("children").update({"coins": 0}).eq(
+        "id", child_row["id"]
+    ).execute()
+    return ActionSuccessResponse()
+
+
+@router.post(
+    "/children/{child_id}/reset/tricks",
+    response_model=ActionSuccessResponse,
+    summary="Clear all trick discoveries and reset current trick to C4 (parent-authed).",
+)
+async def reset_child_tricks(
+    child_id: str,
+    current: AuthUser = Depends(get_current_user),
+) -> ActionSuccessResponse:
+    """Delete every row in ``trick_discoveries`` for the child and set
+    ``children.current_trick = 'C4'``.
+
+    All unlock progress and phase counters are lost. This cannot be undone.
+    """
+    _require_parent(current)
+    child_row = _require_owned_child(child_id, str(current.id))
+    admin = get_admin_supabase()
+    admin.table("trick_discoveries").delete().eq("child_id", child_row["id"]).execute()
+    admin.table("children").update({"current_trick": "C4"}).eq(
+        "id", child_row["id"]
+    ).execute()
+    return ActionSuccessResponse()
+
+
+@router.delete(
+    "/children/{child_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Permanently delete a child account (parent-authed, requires confirm=true).",
+)
+async def delete_child(
+    child_id: str,
+    body: DeleteChildRequest,
+    current: AuthUser = Depends(get_current_user),
+) -> None:
+    """Permanently delete the child's auth user and all associated data.
+
+    Requires ``{ "confirm": true }`` in the request body — returns
+    ``422 delete_not_confirmed`` otherwise.
+
+    Deletion calls ``auth.admin.delete_user`` which cascades through
+    ``auth.users → public.users → public.children`` via ON DELETE CASCADE,
+    removing the child's profile, attempts history, and trick discoveries.
+    This action is **irreversible**.
+    """
+    _require_parent(current)
+    child_row = _require_owned_child(child_id, str(current.id))
+
+    if not body.confirm:
+        raise APIError(
+            "Pass confirm=true in the request body to permanently delete this child account.",
+            code="delete_not_confirmed",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        )
+
+    get_admin_supabase().auth.admin.delete_user(child_row["user_id"])
 
 
 # -----------------------------------------------------------------------------

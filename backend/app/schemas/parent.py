@@ -144,6 +144,27 @@ class DayAnalysis(BaseModel):
     correct: int
 
 
+class DailyProblemEntry(BaseModel):
+    stem: str
+    duration: float | None
+    trick_category: str | None
+
+
+class DailyShortestEntry(BaseModel):
+    stem: str
+    trick_category: str | None
+    duration: float
+
+
+class DailyAnalysisResponse(BaseModel):
+    """Response for ``GET /parent/children/{child_id}/analysis/daily``."""
+
+    date: str
+    problems: list[DailyProblemEntry]
+    avg_duration: float | None
+    shortest: DailyShortestEntry | None
+
+
 class WeekAnalysisResponse(BaseModel):
     """Response for ``GET /parent/children/{child_id}/analysis/week``."""
 

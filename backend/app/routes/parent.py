@@ -50,11 +50,14 @@ from app.schemas.parent import (
     ChildDifficultyUpdate,
     ChildProfile,
     ChildrenListResponse,
+    ConceptStat,
+    ConceptsAnalysisResponse,
+    DailyAnalysisResponse,
+    DailyProblemEntry,
+    DailyShortestEntry,
     DayAnalysis,
     ParentSettings,
     ParentSettingsUpdate,
-    ConceptStat,
-    ConceptsAnalysisResponse,
     WeekAnalysisResponse,
 )
 from app.schemas.tricks import UnlockedTrick, UnlockedTricksResponse
@@ -695,6 +698,127 @@ async def get_child_concepts_analysis(
     )
 
     return ConceptsAnalysisResponse(child_id=child_id, concepts=concepts)
+
+
+# -----------------------------------------------------------------------------
+# GET /parent/children/{child_id}/analysis/daily — today's problem activity
+# NOTE: registered before /{period} so "daily" is matched as a static segment.
+# -----------------------------------------------------------------------------
+
+
+@router.get(
+    "/children/{child_id}/analysis/daily",
+    response_model=DailyAnalysisResponse,
+    summary="Return today's problem activity for a child (parent-authed).",
+)
+async def get_child_daily_analysis(
+    child_id: str,
+    current: AuthUser = Depends(get_current_user),
+) -> DailyAnalysisResponse:
+    """Return all problems the child attempted today (UTC), with durations and
+    trick categories.
+
+    - **problems** — every problem attempted today: stem, duration (seconds),
+      trick category. ``duration`` is ``null`` when the attempt had no timing.
+    - **avg_duration** — mean duration in seconds across problems that have one.
+      ``null`` if no timed attempts today.
+    - **shortest** — the problem with the lowest recorded duration today.
+      ``null`` if no timed attempts today.
+
+    Trick category is resolved via ``problems.trick_id`` (AI-generated problems)
+    or the first element of ``problems.trick_ids[]`` (seeded problems).
+    """
+    _require_parent(current)
+    child_row = _require_owned_child(child_id, str(current.id))
+
+    now = datetime.now(timezone.utc)
+    day_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_end = day_start + timedelta(days=1)
+
+    admin = get_admin_supabase()
+
+    # 1. Attempts for this child today.
+    attempts_res = (
+        admin.table("problem_attempts")
+        .select("problem_id, duration_ms")
+        .eq("child_id", child_row["id"])
+        .gte("answered_at", day_start.isoformat())
+        .lt("answered_at", day_end.isoformat())
+        .execute()
+    )
+    if not attempts_res.data:
+        return DailyAnalysisResponse(
+            date=day_start.date().isoformat(),
+            problems=[],
+            avg_duration=None,
+            shortest=None,
+        )
+
+    # 2. Batch-fetch stem + trick columns for each problem.
+    problem_ids = [row["problem_id"] for row in attempts_res.data]
+    problems_res = (
+        admin.table("problems")
+        .select("id, stem, trick_id, trick_ids")
+        .in_("id", problem_ids)
+        .execute()
+    )
+    problem_map = {row["id"]: row for row in (problems_res.data or [])}
+
+    # 3. Fetch all tricks for category lookup.
+    tricks_res = (
+        admin.table("tricks")
+        .select("id, category")
+        .execute()
+    )
+    category_map = {row["id"]: row["category"] for row in (tricks_res.data or [])}
+
+    def _resolve_trick_id(prob: dict) -> str | None:
+        if prob.get("trick_id"):
+            return prob["trick_id"]
+        ids = prob.get("trick_ids") or []
+        return ids[0] if ids else None
+
+    def _ms_to_s(ms: int | None) -> float | None:
+        return round(ms / 1000, 2) if ms is not None else None
+
+    # 4. Build the problems list.
+    problems: list[DailyProblemEntry] = []
+    for attempt in attempts_res.data:
+        prob = problem_map.get(attempt["problem_id"])
+        if not prob:
+            continue
+        trick_id = _resolve_trick_id(prob)
+        problems.append(
+            DailyProblemEntry(
+                stem=prob["stem"],
+                duration=_ms_to_s(attempt["duration_ms"]),
+                trick_category=category_map.get(trick_id) if trick_id else None,
+            )
+        )
+
+    # 5. Compute avg and shortest from problems that have a duration.
+    timed = [p for p in problems if p.duration is not None]
+    if not timed:
+        return DailyAnalysisResponse(
+            date=day_start.date().isoformat(),
+            problems=problems,
+            avg_duration=None,
+            shortest=None,
+        )
+
+    avg_duration = round(sum(p.duration for p in timed) / len(timed), 2)  # type: ignore[arg-type]
+    shortest_entry = min(timed, key=lambda p: p.duration)  # type: ignore[arg-type]
+
+    return DailyAnalysisResponse(
+        date=day_start.date().isoformat(),
+        problems=problems,
+        avg_duration=avg_duration,
+        shortest=DailyShortestEntry(
+            stem=shortest_entry.stem,
+            trick_category=shortest_entry.trick_category,
+            duration=shortest_entry.duration,  # type: ignore[arg-type]
+        ),
+    )
 
 
 # -----------------------------------------------------------------------------

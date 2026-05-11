@@ -119,6 +119,19 @@ class StreakResponse(BaseModel):
     streak_best: int
 
 
+class ChildDifficultyUpdate(BaseModel):
+    """Body for ``PATCH /parent/children/{child_id}/difficulty``."""
+
+    difficulty_ceiling: int = Field(ge=1, le=10)
+
+
+class ChildDifficultyResponse(BaseModel):
+    """Response for ``PATCH /parent/children/{child_id}/difficulty``."""
+
+    child_id: str
+    difficulty_ceiling: int
+
+
 class ParentSettingsUpdate(BaseModel):
     """Partial-update payload for ``PATCH /parent/settings``.
 

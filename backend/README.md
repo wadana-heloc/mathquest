@@ -129,6 +129,7 @@ from `public.users` on every call (TDD §9.1) — a child's token gets a
 | `POST  /parent/children`  | parent       | Create a child account. Calls `admin.create_user` with `app_metadata.role='child'` and inserts the matching `public.children` row. Rolls back the auth user on downstream failure. |
 | `GET   /parent/children`  | parent       | List all children belonging to the caller. Returns `{ children: [ChildProfile, ...] }`. Empty list if no children yet. |
 | `GET   /parent/children/{child_id}/tricks` | parent | Return unlocked tricks for one child. `child_id` = `public.children.id` (the `id` from `GET /parent/children`). Returns `404 child_not_found` if the child doesn't exist or belongs to another parent. Response shape same as `GET /child/tricks`. |
+| `PATCH /parent/children/{child_id}/difficulty` | parent | Set `difficulty_ceiling` (1–10) for one child. Body: `{ difficulty_ceiling: int }`. Enforces child ceiling ≤ parent's own `parent_settings.difficulty_ceiling`; returns `422 exceeds_parent_ceiling` if violated. Returns `{ child_id, difficulty_ceiling }`. |
 | `GET   /parent/settings`  | parent       | Read the parent's `public.parent_settings` row (auto-created at signup). |
 | `PATCH /parent/settings`  | parent       | Partial-update settings. Server-managed counters (`stars_earned`, `stars_redeemed`, `last_notified_at`) are **not** writable here. |
 

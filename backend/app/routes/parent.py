@@ -35,6 +35,7 @@ from app.errors import (
     ChildCreateFailed,
     ChildNotFound,
     EmailAlreadyRegistered,
+    ExceedsParentCeiling,
     ForbiddenRole,
     NotAuthenticated,
     WeakPassword,
@@ -42,6 +43,8 @@ from app.errors import (
 from app.schemas.parent import (
     ChildCreateRequest,
     ChildCreateResponse,
+    ChildDifficultyResponse,
+    ChildDifficultyUpdate,
     ChildProfile,
     ChildrenListResponse,
     ParentSettings,
@@ -436,6 +439,76 @@ async def get_child_unlocked_tricks(
         )
 
     return UnlockedTricksResponse(unlocked_tricks=unlocked)
+
+
+# -----------------------------------------------------------------------------
+# PATCH /parent/children/{child_id}/difficulty — update child difficulty ceiling
+# -----------------------------------------------------------------------------
+
+
+@router.patch(
+    "/children/{child_id}/difficulty",
+    response_model=ChildDifficultyResponse,
+    summary="Set the difficulty ceiling for a specific child (parent-authed).",
+)
+async def update_child_difficulty(
+    child_id: str,
+    body: ChildDifficultyUpdate,
+    current: AuthUser = Depends(get_current_user),
+) -> ChildDifficultyResponse:
+    """Update ``children.difficulty_ceiling`` for one of the parent's children.
+
+    The requested ceiling must not exceed the parent's own
+    ``parent_settings.difficulty_ceiling`` — the child's cap can only be
+    equal to or tighter than the parent-level cap.  Returns
+    ``422 exceeds_parent_ceiling`` if the constraint is violated.
+
+    Uses SELECT-after-UPDATE so the returned value reflects committed state.
+    """
+    _require_parent(current)
+    child_row = _require_owned_child(child_id, str(current.id))
+
+    admin = get_admin_supabase()
+
+    # Enforce: child ceiling must not exceed the parent's own ceiling.
+    settings_res = (
+        admin.table("parent_settings")
+        .select("difficulty_ceiling")
+        .eq("parent_id", str(current.id))
+        .limit(1)
+        .execute()
+    )
+    if not settings_res.data:
+        raise APIError(
+            "Parent settings row missing.",
+            code="parent_settings_missing",
+            status_code=500,
+        )
+    parent_ceiling: int = settings_res.data[0]["difficulty_ceiling"]
+
+    if body.difficulty_ceiling > parent_ceiling:
+        raise ExceedsParentCeiling(
+            f"Child difficulty ceiling ({body.difficulty_ceiling}) cannot exceed "
+            f"the parent ceiling ({parent_ceiling}). Lower the parent ceiling first "
+            f"or choose a value ≤ {parent_ceiling}."
+        )
+
+    admin.table("children").update(
+        {"difficulty_ceiling": body.difficulty_ceiling}
+    ).eq("id", child_row["id"]).execute()
+
+    # SELECT-after-UPDATE — don't trust .data from the UPDATE call.
+    refreshed = (
+        admin.table("children")
+        .select("difficulty_ceiling")
+        .eq("id", child_row["id"])
+        .limit(1)
+        .execute()
+    )
+    return ChildDifficultyResponse(
+        child_id=child_id,
+        difficulty_ceiling=refreshed.data[0]["difficulty_ceiling"],
+    )
 
 
 # -----------------------------------------------------------------------------

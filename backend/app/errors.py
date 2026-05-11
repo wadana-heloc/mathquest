@@ -122,6 +122,13 @@ class ChildNotFound(APIError):
     code = "child_not_found"
 
 
+class ExceedsParentCeiling(APIError):
+    """Requested child difficulty_ceiling exceeds the parent's own ceiling."""
+
+    status_code = status.HTTP_422_UNPROCESSABLE_ENTITY
+    code = "exceeds_parent_ceiling"
+
+
 class ChildCreateFailed(APIError):
     """Something went wrong creating the child after auth.users was made.
 

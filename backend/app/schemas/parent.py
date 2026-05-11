@@ -120,6 +120,14 @@ class StreakResponse(BaseModel):
     streak_best: int
 
 
+class WeakConceptsResponse(BaseModel):
+    """Response for ``GET /parent/children/{child_id}/analysis/concepts``."""
+
+    child_id: str
+    weakest_category: str | None
+    failed: int
+
+
 class DayAnalysis(BaseModel):
     """Activity stats for a single day in the weekly breakdown."""
 

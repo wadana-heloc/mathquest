@@ -515,7 +515,7 @@ export default function Zone2Game() {
 
       <ProgressHUD solved={progress.solved} total={progress.total} />
       <BossHUD phase={bossPhase} visible={bossVisible} />
-      <CoinStreak coins={coins} sessionCoins={sessionCoins} streak={streak} capReached={capReached} onTricks={() => setShowTricks(true)} tricksCount={DUMMY_DISCOVERED.length} />
+      <CoinStreak coins={coins} sessionCoins={sessionCoins} streak={streak} capReached={capReached} onTricks={() => setShowTricks(true)} tricksCount={tricksCount} />
 
       {!activeTrigger && <TouchControls visible={showControls} />}
       {!showControls && !activeTrigger && <KeyboardHint />}

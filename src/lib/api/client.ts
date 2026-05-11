@@ -25,7 +25,8 @@ async function apiFetch<T>(path: string, init: RequestInit): Promise<T> {
     const detail = (body as { detail?: string }).detail
     throw new Error(detail ?? `API error ${res.status}: ${path}`)
   }
-  return res.json() as Promise<T>
+  const text = await res.text()
+  return (text ? JSON.parse(text) : {}) as T
 }
 
 export function apiGet<T>(path: string): Promise<T> {
@@ -38,4 +39,8 @@ export function apiPost<T>(path: string, body: unknown): Promise<T> {
 
 export function apiPatch<T>(path: string, body: unknown): Promise<T> {
   return apiFetch<T>(path, { method: 'PATCH', body: JSON.stringify(body) })
+}
+
+export function apiDelete<T>(path: string, body?: unknown): Promise<T> {
+  return apiFetch<T>(path, { method: 'DELETE', ...(body !== undefined ? { body: JSON.stringify(body) } : {}) })
 }

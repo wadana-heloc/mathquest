@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useTransition, useRef } from "react";
 import { logout } from "@/lib/auth/actions";
-import { addChild, deleteChild, generateStory, fetchChildTricks, fetchChildAnalysis, fetchWeeklyActivity, fetchConceptAnalysis, updateDifficultyCeiling, type DBChild, type GeneratedStory, type StoryChapter, type ChildTrick, type WeeklyActivityDay, type ConceptStat } from "@/lib/parent/actions";
+import { addChild, deleteChild, resetZone, resetCoins, resetTricks, generateStory, fetchChildTricks, fetchChildAnalysis, fetchWeeklyActivity, fetchConceptAnalysis, fetchDailyAnalysis, updateDifficultyCeiling, type DBChild, type GeneratedStory, type StoryChapter, type ChildTrick, type WeeklyActivityDay, type ConceptStat, type DailyAnalysis } from "@/lib/parent/actions";
 import AddChildModal from "@/components/parent/AddChildModal";
 import type { AddChildForm } from "@/types/parent";
 
@@ -388,6 +388,122 @@ function CorrectRateDonut({ correctPct = 72 }: { correctPct?: number }) {
   );
 }
 
+// ─── Today's Problems Section ─────────────────────────────────────────────────
+
+function TodayProblemsSection({ childId }: { childId: string }) {
+  const [data, setData] = useState<DailyAnalysis | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchDailyAnalysis(childId)
+      .then(setData)
+      .finally(() => setLoading(false));
+  }, [childId]);
+
+  const dateLabel = data?.date
+    ? new Date(data.date).toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" })
+    : new Date().toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric" });
+
+  const shortestStem = data?.shortest?.stem ?? null;
+
+  return (
+    <SectionCard
+      title="Today's Problems"
+      badge={
+        loading ? undefined : data && data.problems.length > 0 ? (
+          <Pill label={`${data.problems.length} solved`} color="bg-teal/10 text-teal" />
+        ) : undefined
+      }
+    >
+      {/* sub-header */}
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-[11px] text-stone-400 font-medium">{dateLabel}</span>
+        {!loading && data && data.problems.length > 0 && (
+          <div className="flex items-center gap-1.5 text-[11px] text-stone-400">
+            <span className="w-5 h-5 rounded-lg bg-amber-50 flex items-center justify-center text-xs">⚡</span>
+            <span>Avg <span className="font-bold text-stone-600">{data.avg_duration}s</span></span>
+          </div>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="space-y-2.5">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="h-14 bg-stone-100 rounded-xl animate-pulse" />
+          ))}
+        </div>
+      ) : !data || data.problems.length === 0 ? (
+        <div className="py-8 text-center">
+          <div className="text-3xl mb-2">📭</div>
+          <p className="text-xs font-semibold text-stone-500">No problems solved today yet</p>
+          <p className="text-[11px] text-stone-400 mt-0.5">Check back after the child's next session</p>
+        </div>
+      ) : (
+        <>
+          <div className={`space-y-2 ${data.problems.length > 5 ? "max-h-[320px] overflow-y-auto pr-1" : ""}`}>
+            {[...data.problems].sort((a, b) => a.duration - b.duration).map((p, i) => {
+              const isFastest = p.stem === shortestStem;
+              return (
+                <div
+                  key={i}
+                  className={`flex items-center gap-3 p-3 rounded-xl border transition-colors ${
+                    isFastest
+                      ? "bg-amber-50 border-amber-200"
+                      : "bg-stone-50 border-stone-100"
+                  }`}
+                >
+                  {/* index */}
+                  <div className="w-6 h-6 rounded-lg bg-white border border-stone-200 flex items-center justify-center flex-shrink-0">
+                    <span className="text-[10px] font-bold text-stone-400">{i + 1}</span>
+                  </div>
+
+                  {/* stem */}
+                  <div className="flex-1 min-w-0">
+                    <p className="text-xs font-semibold text-stone-700 truncate">{p.stem}</p>
+                    <span className={`inline-block mt-0.5 text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      isFastest ? "bg-amber-100 text-amber-700" : "bg-violet/10 text-violet"
+                    }`}>
+                      {p.trick_category}
+                    </span>
+                  </div>
+
+                  {/* duration + fastest badge */}
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {isFastest && (
+                      <span className="text-xs" title="Fastest problem">⚡</span>
+                    )}
+                    <div className={`text-right ${isFastest ? "text-amber-700" : "text-stone-500"}`}>
+                      <span className="text-sm font-bold">{p.duration}</span>
+                      <span className="text-[10px] font-medium ml-0.5">s</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          {/* footer summary */}
+          <div className="mt-4 pt-3 border-t border-stone-100 grid grid-cols-3 gap-2">
+            <div className="text-center">
+              <div className="font-display font-800 text-stone-800 text-base leading-tight">{data.problems.length}</div>
+              <div className="text-[10px] text-stone-400 font-medium uppercase tracking-wide mt-0.5">Problems</div>
+            </div>
+            <div className="text-center border-x border-stone-100">
+              <div className="font-display font-800 text-stone-800 text-base leading-tight">{data.avg_duration}s</div>
+              <div className="text-[10px] text-stone-400 font-medium uppercase tracking-wide mt-0.5">Avg Time</div>
+            </div>
+            <div className="text-center">
+              <div className="font-display font-800 text-amber-600 text-base leading-tight">{data.shortest.duration}s</div>
+              <div className="text-[10px] text-stone-400 font-medium uppercase tracking-wide mt-0.5">Fastest</div>
+            </div>
+          </div>
+        </>
+      )}
+    </SectionCard>
+  );
+}
+
 // ─── Tab sections ─────────────────────────────────────────────────────────────
 const DEFAULT_WEEK: WeeklyActivityDay[] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(day => ({ day, date: "", attempted: 0, correct: 0 }));
 const FULL_DAY: Record<string, string> = { Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday" };
@@ -509,24 +625,7 @@ function OverviewTab({ child }: { child: Child }) {
         <CorrectRateDonut correctPct={statsLoading ? 0 : overviewStats.rate} />
       </div>
 
-      {/* <SectionCard title="Boss Completions" badge={<Pill label={`${child.bosses.length} cleared`} color="bg-coral/10 text-coral" />}>
-        {child.bosses.length === 0 ? (
-          <p className="text-xs text-stone-400 text-center py-4">No bosses defeated yet</p>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            {child.bosses.map(b => (
-              <div key={b.id} className="flex items-center gap-3 p-3 bg-stone-50 rounded-xl border border-stone-100">
-                <div className="w-9 h-9 rounded-xl bg-white border border-stone-100 flex items-center justify-center text-lg flex-shrink-0">{b.emoji}</div>
-                <div className="min-w-0">
-                  <div className="text-xs font-semibold text-stone-700 truncate">{b.name}</div>
-                  <div className="text-[10px] text-stone-400 mt-0.5">{b.zone} · {b.date}</div>
-                  <div className="text-[11px] font-bold text-amber-500 mt-0.5">+{b.coins}</div>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
-      </SectionCard> */}
+      <TodayProblemsSection childId={child.game_id} />
     </div>
   );
 }
@@ -1106,7 +1205,7 @@ function ResetTab({
   deleteError,
 }: {
   childName: string;
-  onReset: (t: "zone" | "coins" | "tricks") => void;
+  onReset: (t: "zone" | "coins" | "tricks") => Promise<{ error?: string }>;
   onDeleteAccount: () => void;
   deleting?: boolean;
   deleteError?: string | null;
@@ -1114,6 +1213,8 @@ function ResetTab({
   const [step, setStep] = useState<Record<string, 0|1|2>>({ zone: 0, coins: 0, tricks: 0 });
   const [checked, setChecked] = useState<Record<string, boolean>>({ zone: false, coins: false, tricks: false });
   const [done, setDone] = useState<string[]>([]);
+  const [loading, setLoading] = useState<Record<string, boolean>>({ zone: false, coins: false, tricks: false });
+  const [errors, setErrors] = useState<Record<string, string | null>>({ zone: null, coins: null, tricks: null });
   const [deleteStep, setDeleteStep] = useState<0|1|2>(0);
   const [deleteChecked, setDeleteChecked] = useState(false);
 
@@ -1176,11 +1277,31 @@ function ResetTab({
                 <p className="text-xs text-red-700 font-medium text-center mb-3">
                   Last chance — this will permanently reset <strong>{r.label}</strong> for {childName}.
                 </p>
+                {errors[r.id] && (
+                  <p className="text-xs text-red-600 text-center mb-3 bg-red-100 rounded-lg px-3 py-2">{errors[r.id]}</p>
+                )}
                 <div className="flex gap-2">
-                  <button onClick={() => setStep(s => ({ ...s, [r.id]: 0 }))}
-                    className="flex-1 h-9 rounded-xl border border-stone-200 bg-white text-stone-500 text-xs font-semibold hover:bg-stone-50 transition-colors">Cancel</button>
-                  <button onClick={() => { onReset(r.id); setDone(d => [...d, r.id]); setStep(s => ({ ...s, [r.id]: 0 })); }}
-                    className="flex-1 h-9 rounded-xl bg-red-500 text-white text-xs font-bold hover:bg-red-600 shadow-sm transition-colors">⚠️ Yes, Reset</button>
+                  <button
+                    disabled={loading[r.id]}
+                    onClick={() => { setStep(s => ({ ...s, [r.id]: 0 })); setErrors(e => ({ ...e, [r.id]: null })); }}
+                    className="flex-1 h-9 rounded-xl border border-stone-200 bg-white text-stone-500 text-xs font-semibold hover:bg-stone-50 transition-colors disabled:opacity-50">Cancel</button>
+                  <button
+                    disabled={loading[r.id]}
+                    onClick={async () => {
+                      setLoading(l => ({ ...l, [r.id]: true }));
+                      setErrors(e => ({ ...e, [r.id]: null }));
+                      const result = await onReset(r.id);
+                      setLoading(l => ({ ...l, [r.id]: false }));
+                      if (result.error) {
+                        setErrors(e => ({ ...e, [r.id]: result.error! }));
+                      } else {
+                        setDone(d => [...d, r.id]);
+                        setStep(s => ({ ...s, [r.id]: 0 }));
+                      }
+                    }}
+                    className="flex-1 h-9 rounded-xl bg-red-500 text-white text-xs font-bold hover:bg-red-600 shadow-sm transition-colors disabled:opacity-60">
+                    {loading[r.id] ? "Resetting…" : "⚠️ Yes, Reset"}
+                  </button>
                 </div>
               </div>
             )}
@@ -1734,12 +1855,19 @@ export default function ParentDashboardClient({ parentName, parentEmail, dbChild
                 {tab === "reset" && (
                   <ResetTab
                     childName={child.name}
-                    onReset={type => {
-                      if (type === "zone")   updateChild(child.id, { zone: 1, zoneName: ZONE_NAMES[1] });
-                      if (type === "coins")  updateChild(child.id, { coins: 0 });
-                      if (type === "tricks") updateChild(child.id, { tricks: [] });
+                    onReset={async (type) => {
+                      let result: { error?: string };
+                      if (type === "zone")        result = await resetZone(child.game_id);
+                      else if (type === "coins")  result = await resetCoins(child.game_id);
+                      else                        result = await resetTricks(child.game_id);
+                      if (!result.error) {
+                        if (type === "zone")   updateChild(child.id, { zone: 1, zoneName: ZONE_NAMES[1] });
+                        if (type === "coins")  updateChild(child.id, { coins: 0 });
+                        if (type === "tricks") updateChild(child.id, { tricks: [] });
+                      }
+                      return result;
                     }}
-                    onDeleteAccount={() => handleDeleteChild(child.id)}
+                    onDeleteAccount={() => handleDeleteChild(child.game_id)}
                     deleting={isDeleting}
                     deleteError={deleteError}
                   />

@@ -1,8 +1,7 @@
 'use server'
 
 import { createClient } from '@/lib/supabase/server'
-import { createAdminClient } from '@/lib/supabase/admin'
-import { apiGet, apiPost, apiPatch } from '@/lib/api/client'
+import { apiGet, apiPost, apiPatch, apiDelete } from '@/lib/api/client'
 import type { AddChildForm } from '@/types/parent'
 
 export type DBChild = {
@@ -89,38 +88,44 @@ export async function addChild(
   }
 }
 
-// ── Delete Child ──────────────────────────────────────────────────────────────
-// No DELETE endpoint in backend — keep using Supabase admin client directly.
+// ── Reset Child Data ──────────────────────────────────────────────────────────
 
-export async function deleteChild(
-  childId: string
-): Promise<{ error?: string }> {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return { error: 'Not authenticated' }
-
-  const admin = createAdminClient()
-
-  const { data: childUser } = await admin
-    .from('users')
-    .select('id')
-    .eq('id', childId)
-    .eq('parent_id', user.id)
-    .eq('role', 'child')
-    .single()
-
-  if (!childUser) return { error: 'Child not found or access denied.' }
-
-  await admin.from('children').delete().eq('user_id', childId)
-  await admin.from('users').delete().eq('id', childId)
-
-  const { error: authError } = await admin.auth.admin.deleteUser(childId)
-  if (authError) {
-    console.error('[deleteChild] auth delete error:', authError.message)
-    return { error: authError.message }
+export async function resetZone(childGameId: string): Promise<{ error?: string }> {
+  try {
+    await apiPost<{ success: boolean }>(`/parent/children/${childGameId}/reset/zone`, {})
+    return {}
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Failed to reset zone.' }
   }
+}
 
-  return {}
+export async function resetCoins(childGameId: string): Promise<{ error?: string }> {
+  try {
+    await apiPost<{ success: boolean }>(`/parent/children/${childGameId}/reset/coins`, {})
+    return {}
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Failed to reset coins.' }
+  }
+}
+
+export async function resetTricks(childGameId: string): Promise<{ error?: string }> {
+  try {
+    await apiPost<{ success: boolean }>(`/parent/children/${childGameId}/reset/tricks`, {})
+    return {}
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Failed to reset tricks.' }
+  }
+}
+
+// ── Delete Child ──────────────────────────────────────────────────────────────
+
+export async function deleteChild(childGameId: string): Promise<{ error?: string }> {
+  try {
+    await apiDelete<{ success: boolean }>(`/parent/children/${childGameId}`, { confirm: true })
+    return {}
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : 'Failed to delete child account.' }
+  }
 }
 
 // ── Generate Story ────────────────────────────────────────────────────────────
@@ -243,6 +248,33 @@ export async function fetchChildTricks(childId: string): Promise<ChildTrick[]> {
     return data.unlocked_tricks
   } catch {
     return []
+  }
+}
+
+// ── Daily Analysis ────────────────────────────────────────────────────────────
+
+export interface DailyProblem {
+  stem: string
+  duration: number
+  trick_category: string
+}
+
+export interface DailyAnalysis {
+  date: string
+  problems: DailyProblem[]
+  avg_duration: number
+  shortest: {
+    stem: string
+    trick_category: string
+    duration: number
+  }
+}
+
+export async function fetchDailyAnalysis(childId: string): Promise<DailyAnalysis | null> {
+  try {
+    return await apiGet<DailyAnalysis>(`/parent/children/${childId}/analysis/daily`)
+  } catch {
+    return null
   }
 }
 

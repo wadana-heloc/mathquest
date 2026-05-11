@@ -1,6 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
+import type { TrickData } from '@/types/game'
 
 // ─────────────────────────────────────────────────────────────
 //  Trick catalogue — dummy data, replace content later.
@@ -224,37 +225,257 @@ export function TricksModal({ discoveredTrickIds, onClose }: TricksModalProps) {
 }
 
 // ─────────────────────────────────────────────────────────────
+//  Trick reveal modal — shown when phase_signal === "reveal"
+// ─────────────────────────────────────────────────────────────
+
+const CAT_EMOJI: Record<string, string> = {
+  Arithmetic: '⚡',
+  Pattern:    '🌀',
+  Mental:     '🧠',
+  Structural: '🔩',
+}
+
+// Zone-based theme — mirrors ProblemCard's ZONE_THEME
+const ZONE_REVEAL_THEME: Record<number, {
+  cardBg:   string   // CSS gradient for the card background
+  border:   string   // Tailwind border class
+  glow:     string   // rgba() for the halo behind the card
+  btn:      string   // Tailwind classes for the CTA button
+  accent:   string   // Tailwind text class for banner text
+  divider:  string   // Tailwind class for the horizontal rule
+  particles: [string, string, string]  // 3 particle colours
+}> = {
+  1: {
+    cardBg:    'linear-gradient(155deg,#071e38 0%,#0d2a4a 60%,#061525 100%)',
+    border:    'border-sky-400/45',
+    glow:      'rgba(56,189,248,0.55)',
+    btn:       'bg-sky-400 hover:bg-sky-300 text-[#071e38] shadow-sky-400/30',
+    accent:    'text-sky-300',
+    divider:   'bg-sky-400/20',
+    particles: ['#38bdf8', '#7dd3fc', '#E8B84B'],
+  },
+  2: {
+    cardBg:    'linear-gradient(155deg,#100d2e 0%,#1c1145 60%,#0e1530 100%)',
+    border:    'border-violet-500/45',
+    glow:      'rgba(139,92,246,0.55)',
+    btn:       'bg-violet-500 hover:bg-violet-400 text-white shadow-violet-500/30',
+    accent:    'text-violet-300',
+    divider:   'bg-violet-400/20',
+    particles: ['#a855f7', '#8b5cf6', '#c084fc'],
+  },
+  3: {
+    cardBg:    'linear-gradient(155deg,#1a0d08 0%,#2a1510 60%,#150b08 100%)',
+    border:    'border-orange-500/45',
+    glow:      'rgba(249,115,22,0.55)',
+    btn:       'bg-orange-500 hover:bg-orange-400 text-white shadow-orange-500/30',
+    accent:    'text-orange-300',
+    divider:   'bg-orange-400/20',
+    particles: ['#f97316', '#fb923c', '#E8B84B'],
+  },
+  4: {
+    cardBg:    'linear-gradient(155deg,#161200 0%,#252018 60%,#121000 100%)',
+    border:    'border-yellow-500/45',
+    glow:      'rgba(234,179,8,0.55)',
+    btn:       'bg-yellow-400 hover:bg-yellow-300 text-[#161200] shadow-yellow-400/30',
+    accent:    'text-yellow-300',
+    divider:   'bg-yellow-400/20',
+    particles: ['#E8B84B', '#fbbf24', '#f59e0b'],
+  },
+  5: {
+    cardBg:    'linear-gradient(155deg,#100d2e 0%,#1c1145 60%,#0e1530 100%)',
+    border:    'border-violet-500/45',
+    glow:      'rgba(139,92,246,0.55)',
+    btn:       'bg-violet-500 hover:bg-violet-400 text-white shadow-violet-500/30',
+    accent:    'text-violet-300',
+    divider:   'bg-violet-400/20',
+    particles: ['#a855f7', '#8b5cf6', '#c084fc'],
+  },
+}
+
+export function TrickRevealModal({
+  trick,
+  zone,
+  onDismiss,
+}: {
+  trick: TrickData | null
+  zone:  number
+  onDismiss: () => void
+}) {
+  const zt = ZONE_REVEAL_THEME[zone] ?? ZONE_REVEAL_THEME[1]
+
+  const particles = useMemo(() =>
+    Array.from({ length: 12 }, (_, i) => {
+      const angle = (i / 12) * 2 * Math.PI
+      const dist  = 55 + (i % 4) * 18
+      return {
+        x:     Math.cos(angle) * dist,
+        y:     Math.sin(angle) * dist,
+        color: zt.particles[i % 3],
+        delay: `${i * 0.06}s`,
+      }
+    }), [zt])
+
+  const cat   = trick?.category ?? 'Mental'
+  const s     = CAT[cat as TrickCategory] ?? CAT.Mental
+  const emoji = CAT_EMOJI[cat] ?? '✨'
+
+  return (
+    <>
+      <style>{`
+        @keyframes trRevealPop {
+          0%  { opacity:0; transform:scale(.78) translateY(28px); }
+          62% { transform:scale(1.05) translateY(-5px); }
+          100%{ opacity:1; transform:scale(1)   translateY(0); }
+        }
+        @keyframes trFloat { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-7px)} }
+        @keyframes trShine {
+          0%  { background-position:-200% center; }
+          100%{ background-position: 200% center; }
+        }
+        @keyframes trParticle {
+          0%  { opacity:1; transform:translate(0,0)                       scale(1); }
+          100%{ opacity:0; transform:translate(var(--tx),var(--ty)) scale(0); }
+        }
+        @keyframes trPulseRing {
+          0%,100%{ box-shadow: 0 0 0 0 var(--ring); }
+          50%    { box-shadow: 0 0 0 10px transparent; }
+        }
+      `}</style>
+
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md overflow-hidden">
+
+        {/* Particle burst */}
+        {particles.map((p, i) => (
+          <div
+            key={i}
+            className="pointer-events-none absolute w-2.5 h-2.5 rounded-full"
+            style={{
+              top: '50%', left: '50%',
+              marginTop: -5, marginLeft: -5,
+              background: p.color,
+              '--tx': `${p.x}px`,
+              '--ty': `${p.y}px`,
+              animation: `trParticle 0.9s ease-out ${p.delay} both`,
+            } as React.CSSProperties}
+          />
+        ))}
+
+        <div
+          className="relative w-full max-w-sm mx-4"
+          style={{ animation: 'trRevealPop 0.42s cubic-bezier(0.34,1.56,0.64,1) both' }}
+        >
+          {/* Zone-colored glow halo */}
+          <div
+            className="pointer-events-none absolute -inset-10 rounded-3xl blur-3xl"
+            style={{ background: `radial-gradient(ellipse at center, ${zt.glow} 0%, transparent 68%)` }}
+          />
+
+          {/* Card */}
+          <div
+            className={`relative rounded-3xl border-2 overflow-hidden shadow-2xl ${zt.border}`}
+            style={{ background: zt.cardBg }}
+          >
+            {/* Shimmer banner */}
+            <div className="relative py-3 text-center overflow-hidden border-b border-white/8">
+              <div
+                className="pointer-events-none absolute inset-0"
+                style={{
+                  background: 'linear-gradient(90deg,transparent 0%,rgba(255,255,255,.18) 50%,transparent 100%)',
+                  backgroundSize: '200% 100%',
+                  animation: 'trShine 2.5s ease-in-out infinite',
+                }}
+              />
+              <span className="relative text-[11px] font-black uppercase tracking-[0.3em] text-white">
+                ✨ New Trick Unlocked ✨
+              </span>
+            </div>
+
+            {/* Body */}
+            <div className="flex flex-col items-center px-6 pt-7 pb-6">
+              {trick ? (
+                <>
+                  {/* Floating emoji icon — zone border, category background */}
+                  <div
+                    className={`w-20 h-20 rounded-2xl flex items-center justify-center text-4xl mb-3 border-2 ${s.bg} ${zt.border}`}
+                    style={{ animation: 'trFloat 3s ease-in-out infinite' }}
+                  >
+                    {emoji}
+                  </div>
+
+                  {/* Category badge */}
+                  <span className={`px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-widest mb-4 text-white ${s.bg}`}>
+                    {trick.category}
+                  </span>
+
+                  {/* Trick name */}
+                  <h2 className="text-[1.6rem] font-black text-center leading-tight mb-1 text-white">
+                    {trick.name}
+                  </h2>
+
+                  {/* Tagline */}
+                  <p className={`text-sm italic text-center mb-5 ${zt.accent}`}>
+                    &ldquo;{trick.tagline}&rdquo;
+                  </p>
+
+                  <div className={`w-full h-px mb-5 ${zt.divider}`} />
+
+                  {/* Description */}
+                  <p className="text-white text-sm leading-relaxed text-center mb-6">
+                    {trick.description}
+                  </p>
+                </>
+              ) : (
+                /* Loading skeleton */
+                <div className="flex flex-col items-center w-full py-3 gap-3 mb-6">
+                  <div className="w-20 h-20 rounded-2xl bg-white/8 animate-pulse" />
+                  <div className="h-4 w-24 rounded-full bg-white/8 animate-pulse" />
+                  <div className="h-7 w-40 rounded-lg  bg-white/8 animate-pulse" />
+                  <div className="h-4 w-48 rounded-full bg-white/8 animate-pulse" />
+                  <div className="h-px  w-full         bg-white/10" />
+                  <div className="h-4 w-full rounded-full bg-white/8 animate-pulse" />
+                  <div className="h-4 w-3/4 rounded-full bg-white/8 animate-pulse" />
+                </div>
+              )}
+
+              {/* CTA button */}
+              <button
+                type="button"
+                onClick={onDismiss}
+                className={`w-full py-3.5 rounded-2xl font-black text-base transition-all duration-150 active:scale-95 shadow-lg ${zt.btn}`}
+              >
+                {trick ? 'Add to Collection →' : 'Got it!'}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ─────────────────────────────────────────────────────────────
 //  Self-contained button + modal — drop anywhere on a page.
 // ─────────────────────────────────────────────────────────────
 
 interface TricksButtonProps {
   discoveredTrickIds?: string[]
-  /** visual theme for the button  */
-  variant?: 'gold' | 'violet' | 'default'
 }
 
-export function TricksButton({ discoveredTrickIds = [], variant = 'default' }: TricksButtonProps) {
+export function TricksButton({ discoveredTrickIds = [] }: TricksButtonProps) {
   const [open, setOpen] = useState(false)
-
-  const variantClass =
-    variant === 'gold'
-      ? 'border-yellow-500/30 text-yellow-300 hover:bg-yellow-400/10 hover:border-yellow-400/50'
-      : variant === 'violet'
-      ? 'border-violet-500/30 text-violet-300 hover:bg-violet-400/10 hover:border-violet-400/50'
-      : 'border-white/15 text-white/60 hover:bg-white/10 hover:text-white hover:border-white/30'
 
   return (
     <>
       <button
         type="button"
         onClick={() => setOpen(true)}
-        className={`relative flex items-center gap-2 bg-black/30 backdrop-blur-sm border px-3 py-2 rounded-xl transition-all duration-200 select-none active:scale-90 ${variantClass}`}
+        className="relative flex items-center gap-1.5 bg-violet-100 hover:bg-violet-200 text-violet-600 font-display font-bold text-sm px-3 py-2 rounded-full border-2 border-violet-200 transition-all duration-200 hover:scale-105 active:scale-95 shadow-sm select-none"
         aria-label="View math tricks"
       >
         <span className="text-base leading-none">✨</span>
-        <span className="text-xs font-black tracking-wide">Tricks</span>
+        <span className="hidden sm:inline text-xs">Tricks</span>
         {discoveredTrickIds.length > 0 && (
-          <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-yellow-400 text-[#1A1A2E] text-[9px] font-black flex items-center justify-center shadow">
+          <span className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-violet-500 text-white text-[9px] font-black flex items-center justify-center shadow">
             {discoveredTrickIds.length}
           </span>
         )}

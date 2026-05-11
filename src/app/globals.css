@@ -11,7 +11,10 @@
   --color-coral:      #F97316;
   --color-violet:     #7C3AED;
   --color-green:      #22C55E;
+  --color-bg:         #F8F7F4;
+  --color-surface:    #FFFFFF;
   --color-border:     #E2E0DC;
+  --color-text:       #1A1A2E;
   --color-text-muted: #6B6A66;
   --font-display:     "Nunito", sans-serif;
   --font-body:        "Inter", sans-serif;
@@ -24,8 +27,9 @@
     margin: 0;
     padding: 0;
     font-family: var(--font-body);
-    background-color: var(--color-primary);
-    color: #ffffff;
+    /* ── LIGHT THEME: warm off-white background, dark text ── */
+    background-color: var(--color-bg);
+    color: var(--color-text);
     -webkit-font-smoothing: antialiased;
   }
 
@@ -36,41 +40,50 @@
 @layer components {
   /* ── Auth Input ───────────────────────────────────────────────────────── */
   .auth-input {
-    @apply w-full bg-white/5 border border-white/10 rounded-md
-           text-white placeholder-white/30
+    @apply w-full border rounded-md
            px-4 h-14 text-base
            transition-all duration-200 outline-none;
+    background-color: var(--color-surface);
+    border-color: var(--color-border);
+    color: var(--color-text);
     font-family: var(--font-body);
     font-size: 15px;
   }
 
+  .auth-input::placeholder {
+    color: var(--color-text-muted);
+    opacity: 0.6;
+  }
+
   .auth-input:focus {
     border-color: var(--color-gold);
-    background-color: rgba(232, 184, 75, 0.05);
+    background-color: rgba(232, 184, 75, 0.04);
     box-shadow: 0 0 0 3px rgba(232, 184, 75, 0.15);
   }
 
   .auth-input.error {
     border-color: var(--color-coral);
-    box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.15);
+    box-shadow: 0 0 0 3px rgba(249, 115, 22, 0.12);
   }
 
   /* ── Auth Label ──────────────────────────────────────────────────────── */
   .auth-label {
-    @apply block text-white/60 mb-2;
+    @apply block mb-2;
     font-family: var(--font-body);
     font-size: 13px;
     font-weight: 500;
     letter-spacing: 0.05em;
     text-transform: uppercase;
+    color: var(--color-text-muted);
   }
 
   /* ── Primary Gold Button ─────────────────────────────────────────────── */
   .btn-gold {
-    @apply w-full h-14 rounded-md font-display font-bold text-primary
+    @apply w-full h-14 rounded-md font-display font-bold
            transition-all duration-200 relative overflow-hidden
            flex items-center justify-center gap-2;
     background-color: var(--color-gold);
+    color: var(--color-primary);
     font-size: 16px;
     letter-spacing: 0.02em;
   }
@@ -78,7 +91,7 @@
   .btn-gold:hover:not(:disabled) {
     background-color: #f0c55c;
     transform: translateY(-1px);
-    box-shadow: 0 8px 30px rgba(232, 184, 75, 0.4);
+    box-shadow: 0 8px 30px rgba(232, 184, 75, 0.35);
   }
 
   .btn-gold:active:not(:disabled) {
@@ -113,15 +126,18 @@
 
   /* ── Ghost / Secondary Button ────────────────────────────────────────── */
   .btn-ghost {
-    @apply w-full h-12 rounded-md font-body font-medium text-white/70
-           border border-white/10 transition-all duration-200
+    @apply w-full h-12 rounded-md font-body font-medium
+           border transition-all duration-200
            flex items-center justify-center gap-2;
     font-size: 14px;
+    color: var(--color-text-muted);
+    border-color: var(--color-border);
   }
 
   .btn-ghost:hover {
-    @apply border-white/30 text-white;
-    background-color: rgba(255,255,255,0.05);
+    border-color: rgba(26, 26, 46, 0.25);
+    color: var(--color-text);
+    background-color: rgba(26, 26, 46, 0.04);
   }
 
   /* ── Error message ───────────────────────────────────────────────────── */
@@ -139,12 +155,16 @@
   .auth-divider::after {
     content: "";
     @apply flex-1 h-px;
-    background: rgba(255,255,255,0.1);
+    background: var(--color-border);
   }
 
   .auth-divider span {
-    @apply text-white/30 text-xs uppercase tracking-widest;
     font-family: var(--font-body);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--color-text-muted);
+    opacity: 0.7;
   }
 }
 
@@ -154,15 +174,15 @@
   inset: 0;
   pointer-events: none;
   z-index: 1;
-  opacity: 0.035;
+  opacity: 0.02;
   background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='1'/%3E%3C/svg%3E");
 }
 
 /* ── Scrollbar ────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--color-primary); }
+::-webkit-scrollbar-track { background: var(--color-bg); }
 ::-webkit-scrollbar-thumb {
-  background: rgba(232,184,75,0.3);
+  background: rgba(232, 184, 75, 0.4);
   border-radius: 999px;
 }
 
@@ -202,6 +222,11 @@
   100% { transform: translateX(200%); }
 }
 
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
 @keyframes insightOverlayIn {
   from { opacity: 0; }
   to   { opacity: 1; }
@@ -234,4 +259,3 @@
   0%   { transform: translate(0, 0) scale(1); opacity: 1; }
   100% { transform: translate(var(--tx), var(--ty)) scale(0); opacity: 0; }
 }
-

@@ -95,3 +95,12 @@ export const STREAK_MILESTONES: StreakMilestone[] = [
   { count: 5,  bonus_coins: 40,  label: '5 streak! +40 coins' },
   { count: 10, bonus_coins: 100, label: '10 streak! +100 coins 🔥' },
 ]
+
+// ── Trick returned by GET /tricks/{id} ───────────────────────
+export interface TrickData {
+  id: string
+  name: string
+  category: string
+  tagline: string
+  description: string
+}

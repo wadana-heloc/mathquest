@@ -50,11 +50,11 @@ const ZONE_NAMES: Record<number, string> = {
 
 // Tailwind color classes per zone (matching design system)
 const ZONE_BADGE_CLASSES: Record<number, string> = {
-  1: 'bg-sky-500/15 text-sky-300 border-sky-500/30',
-  2: 'bg-violet-500/15 text-violet-300 border-violet-500/30',
-  3: 'bg-orange-500/15 text-orange-300 border-orange-500/30',
-  4: 'bg-yellow-500/15 text-yellow-300 border-yellow-500/30',
-  5: 'bg-violet-500/15 text-violet-300 border-violet-500/30',
+  1: 'bg-sky-400/20 text-sky-200 border-sky-400/50',
+  2: 'bg-violet-400/20 text-violet-200 border-violet-400/50',
+  3: 'bg-orange-400/20 text-orange-200 border-orange-400/50',
+  4: 'bg-yellow-400/20 text-yellow-200 border-yellow-400/50',
+  5: 'bg-violet-400/20 text-violet-200 border-violet-400/50',
 }
 
 // Per-zone accent theme — controls card tint, input focus ring, dots, etc.
@@ -359,6 +359,7 @@ function ChoiceButtons({
 export interface ProblemCardProps {
   problem: Problem
   sessionId: string
+  zone: number
 
   // Live state passed in from the parent game component
   currentCoins: number
@@ -378,6 +379,7 @@ export interface ProblemCardProps {
 export function ProblemCard({
   problem,
   sessionId,
+  zone,
   currentCoins,
   currentStreak: _currentStreak,
   onCorrect,
@@ -593,8 +595,8 @@ export function ProblemCard({
   const inputDisabled = isLoading || isResolved || cardState === 'cooldown'
   const canSubmit = inputValue.trim().length > 0 && !inputDisabled
 
-  // ── Zone theme ─────────────────────────────────────────────
-  const theme = ZONE_THEME[problem.zone] ?? ZONE_THEME[1]
+  // ── Zone theme — driven by the active zone, not problem.zone ──
+  const theme = ZONE_THEME[zone] ?? ZONE_THEME[1]
 
   // ── Card border/glow per state ─────────────────────────────
   const cardBorderClass = {
@@ -653,7 +655,7 @@ export function ProblemCard({
 
         {/* ── Header row ──────────────────────────────────── */}
         <div className="relative flex items-start justify-between px-5 pt-5 pb-0">
-          <ZoneBadge zone={problem.zone} />
+          <ZoneBadge zone={zone} />
           <DifficultyDots level={problem.difficulty} dotClass={theme.dotFilled} />
         </div>
 

@@ -3,7 +3,7 @@
 import { createClient } from '@/lib/supabase/server'
 import { createAdminClient } from '@/lib/supabase/admin'
 import { apiGet, apiPost, apiPatch } from '@/lib/api/client'
-import type { Problem, AttemptResult, HintResult, Zone, ProblemCategory, Hint } from '@/types/game'
+import type { Problem, AttemptResult, HintResult, Zone, ProblemCategory, Hint, TrickData } from '@/types/game'
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Backend API response shapes
@@ -174,7 +174,33 @@ export async function updateStreak(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 5. Request a hint
+// 5. Fetch the trick currently assigned to this child (current_trick column)
+// ─────────────────────────────────────────────────────────────────────────────
+
+export async function fetchCurrentTrick(): Promise<TrickData | null> {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return null
+
+    const admin = createAdminClient()
+    const { data: child } = await admin
+      .from('children')
+      .select('current_trick')
+      .eq('user_id', user.id)
+      .single()
+
+    const trickId = (child as { current_trick: string | null } | null)?.current_trick
+    if (!trickId) return null
+
+    return await apiGet<TrickData>(`/tricks/${trickId}`)
+  } catch {
+    return null
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 6. Request a hint
 // ─────────────────────────────────────────────────────────────────────────────
 
 export async function requestHint(payload: {

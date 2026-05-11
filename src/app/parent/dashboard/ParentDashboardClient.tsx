@@ -4,6 +4,7 @@ import { useState, useEffect, useTransition, useRef } from "react";
 import { logout } from "@/lib/auth/actions";
 import { addChild, deleteChild, resetZone, resetCoins, resetTricks, generateStory, fetchChildTricks, fetchChildAnalysis, fetchWeeklyActivity, fetchConceptAnalysis, fetchDailyAnalysis, updateDifficultyCeiling, type DBChild, type GeneratedStory, type StoryChapter, type ChildTrick, type WeeklyActivityDay, type ConceptStat, type DailyAnalysis } from "@/lib/parent/actions";
 import AddChildModal from "@/components/parent/AddChildModal";
+import { GameSpinner, Skeleton, StatCardSkeleton, ConceptBarSkeleton, ProblemRowSkeleton, TrickCardSkeleton, ReportSectionSkeleton } from "@/components/parent/GameLoader";
 import type { AddChildForm } from "@/types/parent";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -430,7 +431,7 @@ function TodayProblemsSection({ childId }: { childId: string }) {
       {loading ? (
         <div className="space-y-2.5">
           {[1, 2, 3, 4].map(i => (
-            <div key={i} className="h-14 bg-stone-100 rounded-xl animate-pulse" />
+            <ProblemRowSkeleton key={i} />
           ))}
         </div>
       ) : !data || data.problems.length === 0 ? (
@@ -540,7 +541,7 @@ function OverviewTab({ child }: { child: Child }) {
       {statsLoading ? (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {[1, 2, 3, 4].map(i => (
-            <div key={i} className="h-[72px] bg-stone-100 rounded-2xl animate-pulse" />
+            <StatCardSkeleton key={i} />
           ))}
         </div>
       ) : (
@@ -679,7 +680,7 @@ function TrickDiscoveriesSection({ childId }: { childId: string }) {
       {loading ? (
         <div className="space-y-2.5">
           {[1, 2, 3].map(i => (
-            <div key={i} className="h-[72px] bg-stone-100 rounded-xl animate-pulse" />
+            <TrickCardSkeleton key={i} />
           ))}
         </div>
       ) : tricks.length === 0 ? (
@@ -773,7 +774,7 @@ function AnalyticsTab({ child }: { child: Child }) {
       {loading ? (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {[1, 2, 3, 4].map(i => (
-            <div key={i} className="h-[72px] bg-stone-100 rounded-2xl animate-pulse" />
+            <StatCardSkeleton key={i} />
           ))}
         </div>
       ) : (
@@ -790,10 +791,7 @@ function AnalyticsTab({ child }: { child: Child }) {
           {conceptsLoading ? (
             <div className="space-y-3.5">
               {[1, 2, 3].map(i => (
-                <div key={i} className="space-y-1.5">
-                  <div className="h-3 bg-stone-100 rounded animate-pulse w-2/3" />
-                  <div className="h-2 bg-stone-100 rounded-full animate-pulse" />
-                </div>
+                <ConceptBarSkeleton key={i} />
               ))}
             </div>
           ) : concepts.length === 0 ? (
@@ -1128,20 +1126,24 @@ function ContentTab({ childId, childName }: { childId: string; childName: string
 
       {/* Loading skeleton */}
       {generating && (
-        <div className="bg-white rounded-2xl border border-stone-100 overflow-hidden animate-pulse">
-          <div className="px-5 py-4 border-b border-stone-50 flex items-center justify-between">
-            <div>
-              <div className="h-4 bg-stone-100 rounded-lg w-44 mb-2" />
-              <div className="h-3 bg-stone-100 rounded-lg w-32" />
-            </div>
-            <div className="h-3 bg-stone-100 rounded w-20" />
+        <div className="bg-white rounded-2xl border border-stone-100 overflow-hidden">
+          <div className="px-5 py-7 border-b border-stone-50 flex flex-col items-center gap-2">
+            <GameSpinner emoji="📖" label="Crafting your story" size="sm" />
           </div>
-          {[1, 2, 3].map(i => (
-            <div key={i} className="flex items-center gap-3 px-5 py-3.5 border-b border-stone-50 last:border-0">
-              <div className="w-7 h-7 rounded-lg bg-stone-100 flex-shrink-0" />
-              <div className="h-3 bg-stone-100 rounded flex-1" />
-            </div>
-          ))}
+          <div className="p-5 space-y-3">
+            {[
+              { title: "w-44", body: ["w-full", "w-5/6", "w-4/5"] },
+              { title: "w-36", body: ["w-full", "w-11/12"] },
+              { title: "w-40", body: ["w-full", "w-3/4", "w-11/12"] },
+            ].map((s, i) => (
+              <div key={i} className="p-3 rounded-xl border border-stone-50 space-y-2">
+                <Skeleton className={`h-3 ${s.title}`} />
+                {s.body.map((w, j) => (
+                  <Skeleton key={j} className={`h-2.5 ${w}`} />
+                ))}
+              </div>
+            ))}
+          </div>
         </div>
       )}
 
@@ -1472,27 +1474,17 @@ function ReportTab({
   if (loading) {
     return (
       <div className="space-y-3">
-        <div className="bg-white rounded-2xl border border-stone-100 px-5 py-4 flex items-center gap-3">
-          <span className="w-4 h-4 rounded-full border-2 border-primary/20 border-t-primary animate-spin flex-shrink-0" />
-          <span className="text-sm font-semibold text-stone-500">Analysing {childName}&apos;s performance…</span>
+        <div className="bg-white rounded-2xl border border-stone-100 px-5 py-8 flex flex-col items-center gap-2">
+          <GameSpinner emoji="📋" label={`Analysing ${childName}'s performance`} />
         </div>
         {[
-          { border: "border-teal/20",   hdr: "bg-teal/5",   widths: ["w-full",   "w-10/12", "w-4/5"              ] },
-          { border: "border-amber-200", hdr: "bg-amber-50", widths: ["w-full",   "w-11/12", "w-4/5",   "w-11/12" ] },
-          { border: "border-blue-200",  hdr: "bg-blue-50",  widths: ["w-[98%]",  "w-10/12", "w-4/5",   "w-11/12" ] },
-          { border: "border-violet/20", hdr: "bg-violet/5", widths: ["w-full",   "w-10/12", "w-[82%]"             ] },
-          { border: "border-gold/20",   hdr: "bg-gold/5",   widths: ["w-[98%]",  "w-11/12", "w-4/5",   "w-[93%]" ] },
+          { border: "border-teal/20",   hdr: "bg-teal/5",   lines: ["w-full",   "w-10/12", "w-4/5"              ] },
+          { border: "border-amber-200", hdr: "bg-amber-50", lines: ["w-full",   "w-11/12", "w-4/5",   "w-11/12" ] },
+          { border: "border-blue-200",  hdr: "bg-blue-50",  lines: ["w-[98%]",  "w-10/12", "w-4/5",   "w-11/12" ] },
+          { border: "border-violet/20", hdr: "bg-violet/5", lines: ["w-full",   "w-10/12", "w-[82%]"             ] },
+          { border: "border-gold/20",   hdr: "bg-gold/5",   lines: ["w-[98%]",  "w-11/12", "w-4/5",   "w-[93%]" ] },
         ].map((s, i) => (
-          <div key={i} className={`rounded-2xl border overflow-hidden animate-pulse ${s.border}`}>
-            <div className={`px-5 py-4 ${s.hdr}`}>
-              <div className="h-4 rounded w-36 bg-white/60" />
-            </div>
-            <div className="px-5 py-4 bg-white space-y-2.5">
-              {s.widths.map((w, j) => (
-                <div key={j} className={`h-3 bg-stone-100 rounded ${w}`} />
-              ))}
-            </div>
-          </div>
+          <ReportSectionSkeleton key={i} border={s.border} hdr={s.hdr} lines={s.lines} />
         ))}
       </div>
     )

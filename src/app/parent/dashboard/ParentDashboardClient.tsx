@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useTransition, useRef } from "react";
 import { logout } from "@/lib/auth/actions";
-import { addChild, deleteChild, generateStory, fetchChildTricks, updateDifficultyCeiling, type DBChild, type GeneratedStory, type StoryChapter, type ChildTrick } from "@/lib/parent/actions";
+import { addChild, deleteChild, generateStory, fetchChildTricks, fetchChildAnalysis, fetchWeeklyActivity, fetchConceptAnalysis, updateDifficultyCeiling, type DBChild, type GeneratedStory, type StoryChapter, type ChildTrick, type WeeklyActivityDay, type ConceptStat } from "@/lib/parent/actions";
 import AddChildModal from "@/components/parent/AddChildModal";
 import type { AddChildForm } from "@/types/parent";
 
@@ -81,12 +81,41 @@ function dbChildToChild(d: DBChild): Child {
   };
 }
 
+// ─── Report types ─────────────────────────────────────────────────────────────
+type ReportSection = { title: string; content: string }
+type ChildReport   = { child_name: string; generated_at: string; sections: ReportSection[] }
+
+// Placeholder sections — replace with live API data when backend is ready
+const DUMMY_REPORT_SECTIONS: ReportSection[] = [
+  {
+    title: "What's Going Well",
+    content: "Layla is showing real confidence in arithmetic, with 75% accuracy across 28 attempts — that's a solid, progressing result for a second grader. At difficulty level 1, she scores 83%, which means she has a strong foundation to build on. She's active and engaged, logging 62 attempts over the past 30 days.",
+  },
+  {
+    title: "Where to Focus",
+    content: "Pattern and invariant are the two areas needing the most attention right now. In pattern problems, Layla scored just 35%, and problems like \"What is 11 × 23?\" and \"11 × 34?\" each required multiple hints and two failed attempts. Invariant reasoning is even more challenging at 29% — questions about number properties like odd and even are the next frontier for her.",
+  },
+  {
+    title: "How They Learn",
+    content: "Layla is averaging 1.8 hints per problem, which is fairly high, and her response time climbs steeply as difficulty increases — from 22 seconds on arithmetic up to 68 seconds on invariant questions. This suggests she's not yet internalizing strategies independently at harder levels. The declining trend and drop in accuracy at level 3 (32%) signal that she's being stretched before some earlier concepts have fully clicked.",
+  },
+  {
+    title: "Tricks to Watch",
+    content: "The ×11 Digit-Sum Rule is in early discovery — it teaches a clever shortcut where multiplying by 11 uses the digits of the other number rather than long multiplication, and Layla is just beginning to explore it. Near-Doubles is in active practice, teaching that adding numbers like 7 + 8 is easier by doubling one and adjusting, but her 40% accuracy shows this still needs reinforcement.",
+  },
+  {
+    title: "Tips for You (the Parent)",
+    content: "When sorting socks or snacks, ask Layla whether a number of items is odd or even and how she knows — this builds invariant thinking naturally. At meals, try \"7 + 8 — can you double the 7 and add one?\" to rehearse Near-Doubles in a low-pressure moment. For the ×11 trick, ask \"What's 11 × 23?\" and walk through it together: first digit is 2, middle is 2+3=5, last digit is 3, so 253.",
+  },
+]
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-type Tab = "overview" | "analytics" | "settings" | "content" | "reset";
+type Tab = "overview" | "analytics" | "report" | "settings" | "content" | "reset";
 
 const TABS: { id: Tab; label: string; emoji: string }[] = [
   { id: "overview",  label: "Overview",  emoji: "🏠" },
   { id: "analytics", label: "Analytics", emoji: "📊" },
+  { id: "report",    label: "Report",    emoji: "📋" },
   { id: "settings",  label: "Settings",  emoji: "⚙️" },
   { id: "content",   label: "Stories",   emoji: "📖" },
   { id: "reset",     label: "Reset",     emoji: "🔄" },
@@ -115,9 +144,9 @@ function StatCard({ icon, label, value, color }: { icon: string; label: string; 
   );
 }
 
-function SectionCard({ title, badge, children }: { title: string; badge?: React.ReactNode; children: React.ReactNode }) {
+function SectionCard({ title, badge, children, className }: { title: string; badge?: React.ReactNode; children: React.ReactNode; className?: string }) {
   return (
-    <div className="bg-white rounded-2xl border border-stone-100 overflow-hidden">
+    <div className={`bg-white rounded-2xl border border-stone-100 overflow-hidden${className ? ` ${className}` : ""}`}>
       <div className="flex items-center justify-between px-5 py-4 border-b border-stone-50">
         <h3 className="font-display font-800 text-stone-800 text-sm">{title}</h3>
         {badge}
@@ -360,28 +389,113 @@ function CorrectRateDonut({ correctPct = 72 }: { correctPct?: number }) {
 }
 
 // ─── Tab sections ─────────────────────────────────────────────────────────────
+const DEFAULT_WEEK: WeeklyActivityDay[] = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map(day => ({ day, date: "", attempted: 0, correct: 0 }));
+const FULL_DAY: Record<string, string> = { Mon: "Monday", Tue: "Tuesday", Wed: "Wednesday", Thu: "Thursday", Fri: "Friday", Sat: "Saturday", Sun: "Sunday" };
+
 function OverviewTab({ child }: { child: Child }) {
-  const max = Math.max(...child.activity.map(d => d.attempted), 1);
+  const [statsLoading, setStatsLoading] = useState(true);
+  const [overviewStats, setOverviewStats] = useState({ attempted: 0, correct: 0, rate: 0 });
+  const [trickCount, setTrickCount] = useState(0);
+  const [weekDays, setWeekDays] = useState<WeeklyActivityDay[]>(DEFAULT_WEEK);
+  const [hoveredDay, setHoveredDay] = useState<number | null>(null);
+  const max = Math.max(...weekDays.map(d => d.attempted), 1);
+
+  useEffect(() => {
+    setStatsLoading(true);
+    setWeekDays(DEFAULT_WEEK);
+    Promise.all([
+      fetchChildAnalysis(child.game_id, "7d"),
+      fetchChildTricks(child.game_id),
+      fetchWeeklyActivity(child.game_id),
+    ]).then(([analysis, tricks, week]) => {
+      if (analysis) {
+        const rate = analysis.attempted > 0
+          ? Math.round((analysis.correct / analysis.attempted) * 100)
+          : 0;
+        setOverviewStats({ attempted: analysis.attempted, correct: analysis.correct, rate });
+      }
+      setTrickCount(tricks.length);
+      if (week.length > 0) setWeekDays(week);
+    }).finally(() => setStatsLoading(false));
+  }, [child.game_id]);
+
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard icon="🎯" label="Problems (7d)" value={child.stats7.attempted}       color="bg-teal/10" />
-        <StatCard icon="✅" label="Correct Rate"  value={`${child.stats7.rate}%`}       color="bg-green-50" />
-        <StatCard icon="✨" label="Tricks Found"  value={`${child.tricks.length}/25`}   color="bg-violet/10" />
-        <StatCard icon="🪙" label="Coin Balance"  value={child.coins.toLocaleString()}  color="bg-amber-50" />
-      </div>
+      {statsLoading ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="h-[72px] bg-stone-100 rounded-2xl animate-pulse" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <StatCard icon="🎯" label="Problems (7d)" value={overviewStats.attempted}        color="bg-teal/10" />
+          <StatCard icon="✅" label="Correct Rate"  value={`${overviewStats.rate}%`}        color="bg-green-50" />
+          <StatCard icon="✨" label="Tricks Found"  value={`${trickCount}/25`}              color="bg-violet/10" />
+          <StatCard icon="🪙" label="Coin Balance"  value={child.coins.toLocaleString()}    color="bg-amber-50" />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        <div className="lg:col-span-2">
-          <SectionCard title="Daily Activity — This Week">
-            <div className="flex items-end gap-2 h-28">
-              {child.activity.map((d, i) => (
-                <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                  <div className="w-full flex items-end gap-0.5 h-20">
-                    <div className="flex-1 bg-teal/20 rounded-t" style={{ height: `${(d.attempted / max) * 100}%` }} />
-                    <div className="flex-1 bg-teal/60 rounded-t"  style={{ height: `${(d.correct   / max) * 100}%` }} />
+        <div className="lg:col-span-2 h-full">
+          <SectionCard title="Daily Activity — This Week" className="h-full">
+            <div className="relative flex items-end gap-2 h-28">
+              {hoveredDay !== null && (() => {
+                const d = weekDays[hoveredDay];
+                const rate = d.attempted > 0 ? Math.round((d.correct / d.attempted) * 100) : null;
+                const dateLabel = d.date
+                  ? new Date(d.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+                  : null;
+                return (
+                  <div className="absolute top-0 right-0 z-10 bg-white border border-stone-100 rounded-2xl px-4 py-3 shadow-xl pointer-events-none flex flex-col gap-2 min-w-[130px]">
+                    {/* Header */}
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="font-display font-800 text-stone-800 text-sm leading-none">{FULL_DAY[d.day] ?? d.day}</div>
+                        {dateLabel && <div className="text-[10px] text-stone-400 mt-0.5">{dateLabel}</div>}
+                      </div>
+                      {rate !== null ? (
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded-full leading-none ${
+                          rate >= 70 ? "bg-teal/10 text-teal" : rate >= 40 ? "bg-amber-50 text-amber-600" : "bg-coral/10 text-coral"
+                        }`}>{rate}%</span>
+                      ) : (
+                        <span className="text-[10px] text-stone-400 italic">No data</span>
+                      )}
+                    </div>
+                    {/* Divider */}
+                    <div className="h-px bg-stone-100" />
+                    {/* Stats */}
+                    <div className="flex flex-col gap-1.5">
+                      <div className="flex items-center justify-between gap-5">
+                        <span className="flex items-center gap-1.5 text-[11px] text-stone-400">
+                          <span className="w-2 h-2 rounded-sm bg-teal/20 flex-shrink-0 inline-block" />
+                          Attempted
+                        </span>
+                        <span className="text-xs font-bold text-stone-700">{d.attempted}</span>
+                      </div>
+                      <div className="flex items-center justify-between gap-5">
+                        <span className="flex items-center gap-1.5 text-[11px] text-stone-400">
+                          <span className="w-2 h-2 rounded-sm bg-teal/60 flex-shrink-0 inline-block" />
+                          Correct
+                        </span>
+                        <span className="text-xs font-bold text-teal">{d.correct}</span>
+                      </div>
+                    </div>
                   </div>
-                  <span className="text-[9px] text-stone-400 font-medium">{d.day.slice(0, 2)}</span>
+                );
+              })()}
+              {weekDays.map((d, i) => (
+                <div
+                  key={i}
+                  className="flex-1 flex flex-col items-center gap-1 cursor-default"
+                  onMouseEnter={() => setHoveredDay(i)}
+                  onMouseLeave={() => setHoveredDay(null)}
+                >
+                  <div className="w-full flex items-end gap-0.5 h-20">
+                    <div className={`flex-1 rounded-t transition-colors ${hoveredDay === i ? "bg-teal/40" : "bg-teal/20"}`} style={{ height: `${(d.attempted / max) * 100}%` }} />
+                    <div className={`flex-1 rounded-t transition-colors ${hoveredDay === i ? "bg-teal/80" : "bg-teal/60"}`} style={{ height: `${(d.correct   / max) * 100}%` }} />
+                  </div>
+                  <span className={`text-[9px] font-medium transition-colors ${hoveredDay === i ? "text-stone-600" : "text-stone-400"}`}>{d.day.slice(0, 2)}</span>
                 </div>
               ))}
             </div>
@@ -392,7 +506,7 @@ function OverviewTab({ child }: { child: Child }) {
           </SectionCard>
         </div>
 
-        <CorrectRateDonut correctPct={65} />
+        <CorrectRateDonut correctPct={statsLoading ? 0 : overviewStats.rate} />
       </div>
 
       {/* <SectionCard title="Boss Completions" badge={<Pill label={`${child.bosses.length} cleared`} color="bg-coral/10 text-coral" />}>
@@ -451,7 +565,10 @@ function TrickDiscoveriesSection({ childId }: { childId: string }) {
   useEffect(() => {
     setLoading(true)
     fetchChildTricks(childId)
-      .then(data => setTricks([...data].sort((a, b) => new Date(b.unlocked_at).getTime() - new Date(a.unlocked_at).getTime())))
+      .then(data => {
+        console.log("[TrickDiscoveriesSection] tricks:", data);
+        setTricks([...data].sort((a, b) => new Date(b.unlocked_at).getTime() - new Date(a.unlocked_at).getTime()));
+      })
       .finally(() => setLoading(false))
   }, [childId])
 
@@ -512,7 +629,34 @@ function TrickDiscoveriesSection({ childId }: { childId: string }) {
 
 function AnalyticsTab({ child }: { child: Child }) {
   const [range, setRange] = useState<"7" | "30">("7");
-  const stats = range === "7" ? child.stats7 : child.stats30;
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState({ attempted: 0, correct: 0, hinted: 0, rate: 0 });
+  const [concepts, setConcepts] = useState<ConceptStat[]>([]);
+  const [conceptsLoading, setConceptsLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    fetchChildAnalysis(child.game_id, range === "7" ? "7d" : "30d")
+      .then(data => {
+        if (data) {
+          const rate = data.attempted > 0
+            ? Math.round((data.correct / data.attempted) * 100)
+            : 0;
+          setStats({ attempted: data.attempted, correct: data.correct, hinted: data.hints_used, rate });
+        } else {
+          setStats({ attempted: 0, correct: 0, hinted: 0, rate: 0 });
+        }
+      })
+      .finally(() => setLoading(false));
+  }, [child.game_id, range]);
+
+  useEffect(() => {
+    setConceptsLoading(true);
+    fetchConceptAnalysis(child.game_id)
+      .then(data => setConcepts(data.sort((a, b) => b.error_rate - a.error_rate)))
+      .finally(() => setConceptsLoading(false));
+  }, [child.game_id]);
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
@@ -527,28 +671,46 @@ function AnalyticsTab({ child }: { child: Child }) {
         </div>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <StatCard icon="🎯" label="Attempted"    value={stats.attempted}        color="bg-teal/10" />
-        <StatCard icon="✅" label="Correct"      value={stats.correct}          color="bg-green-50" />
-        <StatCard icon="💡" label="Hinted"       value={stats.hinted}           color="bg-amber-50" />
-        <StatCard icon="📈" label="Correct Rate" value={`${stats.rate}%`}       color="bg-violet/10" />
-      </div>
+      {loading ? (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {[1, 2, 3, 4].map(i => (
+            <div key={i} className="h-[72px] bg-stone-100 rounded-2xl animate-pulse" />
+          ))}
+        </div>
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          <StatCard icon="🎯" label="Attempted"    value={stats.attempted}        color="bg-teal/10" />
+          <StatCard icon="✅" label="Correct"      value={stats.correct}          color="bg-green-50" />
+          <StatCard icon="💡" label="Hinted"       value={stats.hinted}           color="bg-amber-50" />
+          <StatCard icon="📈" label="Correct Rate" value={`${stats.rate}%`}       color="bg-violet/10" />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         <SectionCard title="Weakest Concepts" badge={<Pill label="by error rate" color="bg-coral/10 text-coral" />}>
-          {child.weakConcepts.length === 0 ? (
+          {conceptsLoading ? (
+            <div className="space-y-3.5">
+              {[1, 2, 3].map(i => (
+                <div key={i} className="space-y-1.5">
+                  <div className="h-3 bg-stone-100 rounded animate-pulse w-2/3" />
+                  <div className="h-2 bg-stone-100 rounded-full animate-pulse" />
+                </div>
+              ))}
+            </div>
+          ) : concepts.length === 0 ? (
             <p className="text-xs text-stone-400 text-center py-4">Not enough data yet</p>
           ) : (
             <div className="space-y-3.5">
-              {child.weakConcepts.map((c, i) => (
+              {concepts.map((c, i) => (
                 <div key={i}>
                   <div className="flex items-center justify-between mb-1.5">
-                    <span className="text-xs font-medium text-stone-700 truncate max-w-[180px]">{c.name}</span>
-                    <span className={`text-xs font-bold ${c.pct > 60 ? "text-coral" : c.pct > 40 ? "text-amber-500" : "text-teal"}`}>{c.pct}%</span>
+                    <span className="text-xs font-medium text-stone-700 capitalize truncate max-w-[180px]">{c.concept}</span>
+                    <span className={`text-xs font-bold ${c.error_rate > 60 ? "text-coral" : c.error_rate > 40 ? "text-amber-500" : "text-teal"}`}>{c.error_rate}%</span>
                   </div>
                   <div className="h-2 bg-stone-100 rounded-full overflow-hidden">
-                    <div className={`h-full rounded-full ${c.pct > 60 ? "bg-coral" : c.pct > 40 ? "bg-amber-400" : "bg-teal"}`} style={{ width: `${c.pct}%` }} />
+                    <div className={`h-full rounded-full ${c.error_rate > 60 ? "bg-coral" : c.error_rate > 40 ? "bg-amber-400" : "bg-teal"}`} style={{ width: `${c.error_rate}%` }} />
                   </div>
+                  <div className="text-[10px] text-stone-400 mt-1">{c.attempted} attempts</div>
                 </div>
               ))}
             </div>
@@ -1092,6 +1254,226 @@ function ResetTab({
   );
 }
 
+// ─── Report helpers ──────────────────────────────────────────────────────────
+type ReportSectionStyle = { icon: string; bg: string; border: string; headerBg: string; titleColor: string }
+
+function getReportSectionStyle(title: string): ReportSectionStyle {
+  const t = title.toLowerCase()
+  if (t.includes("going well") || t.includes("strength"))
+    return { icon: "✨", bg: "bg-teal/5",   border: "border-teal/20",   headerBg: "bg-teal/10",   titleColor: "text-teal"      }
+  if (t.includes("focus") || t.includes("where"))
+    return { icon: "🎯", bg: "bg-amber-50", border: "border-amber-200", headerBg: "bg-amber-100", titleColor: "text-amber-700" }
+  if (t.includes("learn") || t.includes("how they"))
+    return { icon: "🧠", bg: "bg-blue-50",  border: "border-blue-200",  headerBg: "bg-blue-100",  titleColor: "text-blue-700"  }
+  if (t.includes("trick"))
+    return { icon: "🔮", bg: "bg-violet/5", border: "border-violet/20", headerBg: "bg-violet/10", titleColor: "text-violet"    }
+  if (t.includes("tip") || t.includes("parent"))
+    return { icon: "💡", bg: "bg-gold/5",   border: "border-gold/20",   headerBg: "bg-gold/10",   titleColor: "text-amber-600" }
+  return   { icon: "📝", bg: "bg-stone-50", border: "border-stone-100", headerBg: "bg-stone-100", titleColor: "text-stone-700" }
+}
+
+function buildReportHTML(report: ChildReport): string {
+  const date = new Date(report.generated_at).toLocaleDateString("en-US", {
+    year: "numeric", month: "long", day: "numeric",
+  })
+  function esc(s: string) {
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+  }
+  function hdrStyle(title: string): string {
+    const t = title.toLowerCase()
+    if (t.includes("going well") || t.includes("strength")) return "background:#f0fdfa;color:#0d9488;"
+    if (t.includes("focus") || t.includes("where"))         return "background:#fffbeb;color:#b45309;"
+    if (t.includes("learn") || t.includes("how they"))      return "background:#eff6ff;color:#1d4ed8;"
+    if (t.includes("trick"))                                 return "background:#f5f3ff;color:#7c3aed;"
+    if (t.includes("tip") || t.includes("parent"))          return "background:#fffbeb;color:#d97706;"
+    return "background:#f9fafb;color:#374151;"
+  }
+  const sectionsHTML = report.sections.map(s =>
+    `<div style="margin-bottom:20px;border-radius:12px;overflow:hidden;border:1px solid #e5e7eb;">` +
+    `<div style="padding:14px 20px;${hdrStyle(s.title)}"><strong style="font-size:15px;">${esc(s.title)}</strong></div>` +
+    `<div style="padding:18px 20px;background:#fff;color:#374151;font-size:15px;line-height:1.75;">${esc(s.content)}</div>` +
+    `</div>`
+  ).join("")
+  return `<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>MathQuest Report — ${esc(report.child_name)}</title>
+<style>
+*{box-sizing:border-box}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;max-width:680px;margin:0 auto;padding:32px 20px;color:#1f2937;background:#f9fafb}
+.hd{text-align:center;margin-bottom:32px;padding:28px;background:#fff;border-radius:14px;border:1px solid #e5e7eb}
+.logo{font-size:22px;font-weight:900;letter-spacing:-0.5px;color:#1e293b}.logo span{color:#f59e0b}
+.name{font-size:20px;font-weight:700;color:#1e293b;margin:12px 0 4px}.meta{color:#6b7280;font-size:12px}
+.ft{text-align:center;margin-top:28px;color:#9ca3af;font-size:11px}
+@media print{body{background:#fff;padding:16px}.hd{border:none;padding:0 0 20px}}
+</style></head>
+<body>
+<div class="hd"><div class="logo">Math<span>Quest</span></div><div class="name">${esc(report.child_name)}</div><div class="meta">Learning Report · ${date}</div></div>
+${sectionsHTML}
+<div class="ft">Generated by MathQuest</div></body></html>`
+}
+
+// ─── Report Tab ───────────────────────────────────────────────────────────────
+function ReportTab({
+  childName,
+  report,
+  onReport,
+}: {
+  childName: string
+  report: ChildReport | null
+  onReport: (r: ChildReport) => void
+}) {
+  const [loading, setLoading] = useState(false)
+
+  async function handleGenerate() {
+    if (loading) return
+    setLoading(true)
+    await new Promise<void>(resolve => setTimeout(resolve, 2200))
+    onReport({ child_name: childName, generated_at: new Date().toISOString(), sections: DUMMY_REPORT_SECTIONS })
+    setLoading(false)
+  }
+
+  function handleDownload() {
+    if (!report) return
+    const html = buildReportHTML(report)
+    const blob = new Blob([html], { type: "text/html;charset=utf-8" })
+    const url  = URL.createObjectURL(blob)
+    const a    = document.createElement("a")
+    a.href     = url
+    a.download = `MathQuest-Report-${childName.replace(/\s+/g, "-")}-${new Date().toISOString().split("T")[0]}.html`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  // ── Loading ──────────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="space-y-3">
+        <div className="bg-white rounded-2xl border border-stone-100 px-5 py-4 flex items-center gap-3">
+          <span className="w-4 h-4 rounded-full border-2 border-primary/20 border-t-primary animate-spin flex-shrink-0" />
+          <span className="text-sm font-semibold text-stone-500">Analysing {childName}&apos;s performance…</span>
+        </div>
+        {[
+          { border: "border-teal/20",   hdr: "bg-teal/5",   widths: ["w-full",   "w-10/12", "w-4/5"              ] },
+          { border: "border-amber-200", hdr: "bg-amber-50", widths: ["w-full",   "w-11/12", "w-4/5",   "w-11/12" ] },
+          { border: "border-blue-200",  hdr: "bg-blue-50",  widths: ["w-[98%]",  "w-10/12", "w-4/5",   "w-11/12" ] },
+          { border: "border-violet/20", hdr: "bg-violet/5", widths: ["w-full",   "w-10/12", "w-[82%]"             ] },
+          { border: "border-gold/20",   hdr: "bg-gold/5",   widths: ["w-[98%]",  "w-11/12", "w-4/5",   "w-[93%]" ] },
+        ].map((s, i) => (
+          <div key={i} className={`rounded-2xl border overflow-hidden animate-pulse ${s.border}`}>
+            <div className={`px-5 py-4 ${s.hdr}`}>
+              <div className="h-4 rounded w-36 bg-white/60" />
+            </div>
+            <div className="px-5 py-4 bg-white space-y-2.5">
+              {s.widths.map((w, j) => (
+                <div key={j} className={`h-3 bg-stone-100 rounded ${w}`} />
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  // ── Empty state ──────────────────────────────────────────────────────────────
+  if (!report) {
+    return (
+      <div className="relative overflow-hidden bg-white rounded-2xl border border-stone-100 flex flex-col items-center justify-center text-center px-8 py-16 min-h-[460px]">
+        {/* Decorative concentric rings */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none overflow-hidden">
+          <div className="absolute rounded-full border border-stone-300 w-[560px] h-[560px] opacity-[0.017]" />
+          <div className="absolute rounded-full border border-stone-300 w-[420px] h-[420px] opacity-[0.075]" />
+          <div className="absolute rounded-full border border-stone-300 w-[300px] h-[300px] opacity-[0.125]" />
+          <div className="absolute rounded-full border border-stone-300 w-[160px] h-[160px] opacity-[0.183]" />
+        </div>
+
+        {/* Icon badge */}
+        <div className="relative z-10 w-[72px] h-[72px] rounded-[22px] bg-gradient-to-br from-primary to-teal shadow-xl flex items-center justify-center mb-6 flex-shrink-0">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+            <path d="M14 2.5L17 10.5H25L18.5 15L21.5 23L14 18L6.5 23L9.5 15L3 10.5H11L14 2.5Z" fill="white" fillOpacity="0.92"/>
+          </svg>
+        </div>
+
+        <h2 className="relative z-10 font-display font-800 text-stone-800 text-xl mb-2.5">
+          Discover {childName}&apos;s learning journey
+        </h2>
+        <p className="relative z-10 text-sm text-stone-400 max-w-[280px] leading-relaxed mb-8">
+          Get personalised insights into strengths, focus areas, learning patterns, and expert tips — all in one place.
+        </p>
+
+        <button
+          type="button"
+          onClick={handleGenerate}
+          className="relative z-10 h-12 px-8 rounded-2xl bg-primary text-white font-display font-800 text-sm hover:bg-navy-light active:scale-95 transition-all shadow-lg shadow-primary/20"
+        >
+          Generate Report
+        </button>
+
+        {/* Section chips hinting at report contents */}
+        <div className="relative z-10 flex items-center gap-2 mt-8 flex-wrap justify-center">
+          {["✨ Strengths", "🎯 Focus Areas", "🧠 How They Learn", "🔮 Tricks", "💡 Parent Tips"].map(label => (
+            <span key={label} className="text-[11px] font-semibold px-2.5 py-1 rounded-full bg-stone-50 border border-stone-100 text-stone-400">
+              {label}
+            </span>
+          ))}
+        </div>
+      </div>
+    )
+  }
+
+  // ── Report ───────────────────────────────────────────────────────────────────
+  return (
+    <div className="space-y-3">
+      {/* Meta bar */}
+      <div className="flex items-center justify-between px-4 py-3 bg-white rounded-xl border border-stone-100">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-teal flex-shrink-0" />
+          <span className="text-xs text-stone-500 font-medium">
+            Generated {new Date(report.generated_at).toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" })}
+          </span>
+        </div>
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={handleGenerate}
+            className="h-8 px-3 rounded-lg border border-stone-200 bg-stone-50 text-xs font-semibold text-stone-500 hover:bg-stone-100 hover:border-stone-300 transition-all"
+          >
+            ↻ Regenerate
+          </button>
+          <button
+            type="button"
+            onClick={handleDownload}
+            className="flex items-center gap-1.5 h-8 px-3 rounded-lg bg-stone-50 border border-stone-200 text-xs font-semibold text-stone-600 hover:bg-teal/5 hover:border-teal/30 hover:text-teal transition-all"
+          >
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M6 1v7M3 5l3 3 3-3M1 11h10"/>
+            </svg>
+            Download
+          </button>
+        </div>
+      </div>
+
+      {/* Section cards */}
+      {report.sections.map(section => {
+        const s = getReportSectionStyle(section.title)
+        return (
+          <div key={section.title} className={`rounded-2xl border overflow-hidden ${s.border}`}>
+            <div className={`px-5 py-4 flex items-center gap-3 ${s.headerBg}`}>
+              <span className="text-xl leading-none flex-shrink-0">{s.icon}</span>
+              <h3 className={`font-display font-800 text-sm ${s.titleColor}`}>{section.title}</h3>
+            </div>
+            <div className={`px-5 py-5 ${s.bg}`}>
+              <p className="text-sm text-stone-600 leading-relaxed">{section.content}</p>
+            </div>
+          </div>
+        )
+      })}
+    </div>
+  )
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 interface Props {
   parentName: string;
@@ -1110,6 +1492,7 @@ export default function ParentDashboardClient({ parentName, parentEmail, dbChild
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isPending, startTransition] = useTransition();
+  const [childReports, setChildReports] = useState<Record<string, ChildReport>>({});
 
   const child = children.find(c => c.id === selectedId) ?? null;
   const pending = 0;
@@ -1337,6 +1720,13 @@ export default function ParentDashboardClient({ parentName, parentEmail, dbChild
               <div className="pb-6">
                 {tab === "overview"  && <OverviewTab child={child} />}
                 {tab === "analytics" && <AnalyticsTab child={child} />}
+                {tab === "report"    && (
+                  <ReportTab
+                    childName={child.name}
+                    report={childReports[child.game_id] ?? null}
+                    onReport={r => setChildReports(prev => ({ ...prev, [child.game_id]: r }))}
+                  />
+                )}
                 {tab === "settings"  && <SettingsTab child={child} childGameId={child.game_id} onSave={s => updateChild(child.id, { settings: s })} onAudioChange={audio => updateChild(child.id, { audio })} />}
                 {tab === "content" && (
                   <ContentTab childId={child.id} childName={child.name} />

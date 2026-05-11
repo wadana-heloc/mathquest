@@ -178,6 +178,65 @@ export interface ChildTrick {
   unlocked_at: string
 }
 
+export interface ChildAnalysis {
+  child_id: string
+  period: string
+  attempted: number
+  correct: number
+  hints_used: number
+}
+
+export async function fetchChildAnalysis(
+  childId: string,
+  period: '7d' | '30d'
+): Promise<ChildAnalysis | null> {
+  try {
+    return await apiGet<ChildAnalysis>(`/parent/children/${childId}/analysis/${period}`)
+  } catch {
+    return null
+  }
+}
+
+export interface WeeklyActivityDay {
+  day: string
+  date: string
+  attempted: number
+  correct: number
+}
+
+export interface WeeklyActivity {
+  child_id: string
+  week_start: string
+  week_end: string
+  days: WeeklyActivityDay[]
+}
+
+export async function fetchWeeklyActivity(childId: string): Promise<WeeklyActivityDay[]> {
+  try {
+    const data = await apiGet<WeeklyActivity>(`/parent/children/${childId}/analysis/week`)
+    return data.days
+  } catch {
+    return []
+  }
+}
+
+export interface ConceptStat {
+  concept: string
+  attempted: number
+  error_rate: number
+}
+
+export async function fetchConceptAnalysis(childId: string): Promise<ConceptStat[]> {
+  try {
+    const data = await apiGet<{ child_id: string; concepts: ConceptStat[] }>(
+      `/parent/children/${childId}/analysis/concepts`
+    )
+    return data.concepts
+  } catch {
+    return []
+  }
+}
+
 export async function fetchChildTricks(childId: string): Promise<ChildTrick[]> {
   try {
     const data = await apiGet<{ unlocked_tricks: ChildTrick[] }>(`/parent/children/${childId}/tricks`)

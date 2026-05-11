@@ -50,8 +50,10 @@ from app.schemas.parent import (
     ChildDifficultyUpdate,
     ChildProfile,
     ChildrenListResponse,
+    DayAnalysis,
     ParentSettings,
     ParentSettingsUpdate,
+    WeekAnalysisResponse,
 )
 from app.schemas.tricks import UnlockedTrick, UnlockedTricksResponse
 from app.security import AuthUser, get_current_user
@@ -511,6 +513,89 @@ async def update_child_difficulty(
     return ChildDifficultyResponse(
         child_id=child_id,
         difficulty_ceiling=refreshed.data[0]["difficulty_ceiling"],
+    )
+
+
+# -----------------------------------------------------------------------------
+# GET /parent/children/{child_id}/analysis/week — day-by-day weekly breakdown
+# NOTE: must be registered BEFORE /{period} so FastAPI matches "week" as a
+# static segment rather than treating it as a period enum value.
+# -----------------------------------------------------------------------------
+
+_DAY_LABELS = ["Mo", "Tu", "We", "Th", "Fr", "Sa", "Su"]
+
+
+@router.get(
+    "/children/{child_id}/analysis/week",
+    response_model=WeekAnalysisResponse,
+    summary="Return a day-by-day activity breakdown for the current week (Mon–Sun, parent-authed).",
+)
+async def get_child_week_analysis(
+    child_id: str,
+    current: AuthUser = Depends(get_current_user),
+) -> WeekAnalysisResponse:
+    """Return per-day activity stats for the child across the current calendar week.
+
+    The week runs Monday 00:00:00 UTC → Sunday 23:59:59 UTC, calculated from
+    ``now()``.  Future days in the week return zeros.
+
+    Metrics per day:
+    - **attempted** — problems whose most recent attempt (``answered_at``) falls on that day.
+    - **correct** — subset where ``solved_correctly=true AND previously_failed=false``
+      (first-try correct answers).
+    """
+    _require_parent(current)
+    child_row = _require_owned_child(child_id, str(current.id))
+
+    now = datetime.now(timezone.utc)
+    monday = now - timedelta(days=now.weekday())
+    week_start = monday.replace(hour=0, minute=0, second=0, microsecond=0)
+    week_end = week_start + timedelta(days=7)  # exclusive upper bound
+
+    admin = get_admin_supabase()
+    res = (
+        admin.table("problem_attempts")
+        .select("solved_correctly, previously_failed, answered_at")
+        .eq("child_id", child_row["id"])
+        .gte("answered_at", week_start.isoformat())
+        .lt("answered_at", week_end.isoformat())
+        .execute()
+    )
+
+    # Build a dict keyed by ISO date string for fast lookup.
+    from collections import defaultdict
+    day_attempted: dict[str, int] = defaultdict(int)
+    day_correct: dict[str, int] = defaultdict(int)
+
+    for row in (res.data or []):
+        answered_date = (
+            datetime.fromisoformat(row["answered_at"])
+            .astimezone(timezone.utc)
+            .date()
+            .isoformat()
+        )
+        day_attempted[answered_date] += 1
+        if row["solved_correctly"] and not row["previously_failed"]:
+            day_correct[answered_date] += 1
+
+    days = []
+    for offset in range(7):
+        day_date = (week_start + timedelta(days=offset)).date()
+        date_str = day_date.isoformat()
+        days.append(
+            DayAnalysis(
+                day=_DAY_LABELS[offset],
+                date=date_str,
+                attempted=day_attempted[date_str],
+                correct=day_correct[date_str],
+            )
+        )
+
+    return WeekAnalysisResponse(
+        child_id=child_id,
+        week_start=week_start.date().isoformat(),
+        week_end=(week_end - timedelta(days=1)).date().isoformat(),
+        days=days,
     )
 
 

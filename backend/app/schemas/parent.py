@@ -120,6 +120,24 @@ class StreakResponse(BaseModel):
     streak_best: int
 
 
+class DayAnalysis(BaseModel):
+    """Activity stats for a single day in the weekly breakdown."""
+
+    day: str
+    date: str
+    attempted: int
+    correct: int
+
+
+class WeekAnalysisResponse(BaseModel):
+    """Response for ``GET /parent/children/{child_id}/analysis/week``."""
+
+    child_id: str
+    week_start: str
+    week_end: str
+    days: list[DayAnalysis]
+
+
 class AnalysisPeriod(str, Enum):
     """Valid period values for the child analysis endpoint."""
 

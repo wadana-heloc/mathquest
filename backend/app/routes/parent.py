@@ -53,7 +53,8 @@ from app.schemas.parent import (
     DayAnalysis,
     ParentSettings,
     ParentSettingsUpdate,
-    WeakConceptsResponse,
+    ConceptStat,
+    ConceptsAnalysisResponse,
     WeekAnalysisResponse,
 )
 from app.schemas.tricks import UnlockedTrick, UnlockedTricksResponse
@@ -601,58 +602,58 @@ async def get_child_week_analysis(
 
 
 # -----------------------------------------------------------------------------
-# GET /parent/children/{child_id}/analysis/concepts — weakest trick category
+# GET /parent/children/{child_id}/analysis/concepts — per-category error rates
 # NOTE: registered before /{period} so "concepts" is matched as a static segment.
 # -----------------------------------------------------------------------------
 
 
 @router.get(
     "/children/{child_id}/analysis/concepts",
-    response_model=WeakConceptsResponse,
-    summary="Return the child's single weakest trick category (parent-authed).",
+    response_model=ConceptsAnalysisResponse,
+    summary="Return per-category attempt counts and error rates for a child (parent-authed).",
 )
-async def get_child_weak_concepts(
+async def get_child_concepts_analysis(
     child_id: str,
     current: AuthUser = Depends(get_current_user),
-) -> WeakConceptsResponse:
-    """Return the trick category the child has failed at the most (all-time).
+) -> ConceptsAnalysisResponse:
+    """Return all trick categories the child has attempted, with error rates.
 
-    A failure is any ``problem_attempts`` row where ``previously_failed=true``
-    — the child answered that problem incorrectly at least once.  The category
-    is derived by joining ``problems.trick_id`` → ``tricks.category``.
+    ``error_rate`` is the percentage of attempts in that category where
+    ``previously_failed=true`` (the child got it wrong at least once), rounded
+    to the nearest integer.  Results are sorted highest error rate first.
 
-    Returns ``weakest_category=null, failed=0`` when the child has no failures.
+    Returns an empty ``concepts`` list if the child has no attempts yet.
     """
     _require_parent(current)
     child_row = _require_owned_child(child_id, str(current.id))
 
     admin = get_admin_supabase()
 
-    # 1. All problems this child has ever failed.
+    # 1. All problem attempts for this child (attempted + failure flag).
     attempts_res = (
         admin.table("problem_attempts")
-        .select("problem_id")
+        .select("problem_id, previously_failed")
         .eq("child_id", child_row["id"])
-        .eq("previously_failed", True)
         .execute()
     )
     if not attempts_res.data:
-        return WeakConceptsResponse(child_id=child_id, weakest_category=None, failed=0)
+        return ConceptsAnalysisResponse(child_id=child_id, concepts=[])
 
+    # 2. Batch-fetch trick_id for every attempted problem.
     problem_ids = [row["problem_id"] for row in attempts_res.data]
-
-    # 2. Fetch trick_id for each failed problem.
     problems_res = (
         admin.table("problems")
         .select("id, trick_id")
         .in_("id", problem_ids)
         .execute()
     )
-    trick_ids = [row["trick_id"] for row in (problems_res.data or []) if row["trick_id"]]
-    if not trick_ids:
-        return WeakConceptsResponse(child_id=child_id, weakest_category=None, failed=0)
+    trick_map = {
+        row["id"]: row["trick_id"]
+        for row in (problems_res.data or [])
+        if row["trick_id"]
+    }
 
-    # 3. Fetch category for each trick (only 25 rows total — cheap full scan).
+    # 3. Fetch all tricks (25 rows) to get category per trick_id.
     tricks_res = (
         admin.table("tricks")
         .select("id, category")
@@ -660,19 +661,40 @@ async def get_child_weak_concepts(
     )
     category_map = {row["id"]: row["category"] for row in (tricks_res.data or [])}
 
-    # 4. Count failures per category and pick the highest.
-    from collections import Counter
-    category_counts: Counter = Counter()
-    for trick_id in trick_ids:
+    # 4. Aggregate attempted and failed counts per category.
+    from collections import defaultdict
+    cat_attempted: dict[str, int] = defaultdict(int)
+    cat_failed: dict[str, int] = defaultdict(int)
+
+    for attempt in attempts_res.data:
+        trick_id = trick_map.get(attempt["problem_id"])
+        if not trick_id:
+            continue
         cat = category_map.get(trick_id)
-        if cat:
-            category_counts[cat] += 1
+        if not cat:
+            continue
+        cat_attempted[cat] += 1
+        if attempt["previously_failed"]:
+            cat_failed[cat] += 1
 
-    if not category_counts:
-        return WeakConceptsResponse(child_id=child_id, weakest_category=None, failed=0)
+    if not cat_attempted:
+        return ConceptsAnalysisResponse(child_id=child_id, concepts=[])
 
-    weakest, count = category_counts.most_common(1)[0]
-    return WeakConceptsResponse(child_id=child_id, weakest_category=weakest, failed=count)
+    # 5. Build result sorted by error_rate descending.
+    concepts = sorted(
+        [
+            ConceptStat(
+                concept=cat,
+                attempted=total,
+                error_rate=round(cat_failed[cat] / total * 100),
+            )
+            for cat, total in cat_attempted.items()
+        ],
+        key=lambda c: c.error_rate,
+        reverse=True,
+    )
+
+    return ConceptsAnalysisResponse(child_id=child_id, concepts=concepts)
 
 
 # -----------------------------------------------------------------------------

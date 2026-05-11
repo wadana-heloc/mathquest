@@ -120,12 +120,19 @@ class StreakResponse(BaseModel):
     streak_best: int
 
 
-class WeakConceptsResponse(BaseModel):
+class ConceptStat(BaseModel):
+    """Per-category stats for the concepts analysis endpoint."""
+
+    concept: str
+    attempted: int
+    error_rate: int
+
+
+class ConceptsAnalysisResponse(BaseModel):
     """Response for ``GET /parent/children/{child_id}/analysis/concepts``."""
 
     child_id: str
-    weakest_category: str | None
-    failed: int
+    concepts: list[ConceptStat]
 
 
 class DayAnalysis(BaseModel):

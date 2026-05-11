@@ -577,6 +577,14 @@ def _apply_adjuster_results(
 
     trick_update = result.get("trick_update")
     if trick_update:
+        # Mark the completed trick as unlocked so it enters unlocked_tricks on
+        # all future calls.  Without this, unlocked_tricks stays empty and
+        # compute_phase_update() can never advance past the first trick —
+        # prerequisite chains never satisfy and the child loops back to trick 0.
+        admin.table("trick_discoveries").update(
+            {"unlocked": True, "unlocked_at": now}
+        ).eq("child_id", child_id).eq("trick_id", current_trick).execute()
+
         # Ensure the new trick has a fresh discovery row.
         existing = (
             admin.table("trick_discoveries")
@@ -657,10 +665,16 @@ async def get_problems(
         if not eligible:
             return ProblemsListResponse(problems=[])
         current_trick = eligible[0]
-        _ensure_trick_row(child_id, current_trick, admin)
         admin.table("children").update(
             {"current_trick": current_trick}
         ).eq("id", child_id).execute()
+
+    # Always ensure the trick_discoveries row exists for the current trick.
+    # This guards against children whose current_trick was set via a seed or
+    # migration without a corresponding trick_discoveries row: without it,
+    # phase_row is None on every request, disc_seen never increments, and
+    # the adjuster block in attempt_problem is silently skipped forever.
+    _ensure_trick_row(child_id, current_trick, admin)
 
     # Fetch current phase state for this child+trick.
     phase_row = _fetch_phase_row(child_id, current_trick, admin)
@@ -718,35 +732,31 @@ async def get_problems(
             ).eq("child_id", child_id).eq("trick_id", current_trick).execute()
         return ProblemsListResponse(problems=[], phase_signal="reveal")
 
-    # Refill: recommender says the bank is running low or empty.
-    # When refill_context is None the bank is fully depleted — build the
-    # context from child state so we can still queue a generation.
-    # Bypass the skip guard (skip_if_count_gte=0) when current_count=0,
-    # meaning all existing problems at this slot are already solved.
-    if rec.get("needs_refill"):
-        refill_ctx = rec.get("refill_context") or {
-            "trick_id": current_trick,
-            "difficulty": effective,
-            "grade": child_row["grade"],
-            "current_count": 0,
-        }
-        skip_guard = 0 if refill_ctx.get("current_count", 1) == 0 else 2
-        logger.debug(
-            "refill queued: child_id=%s grade=%s current_trick=%s "
-            "difficulty=%s ctx=%s skip_guard=%d",
-            child_id, child_row["grade"], current_trick,
-            effective, refill_ctx, skip_guard,
-        )
-        background_tasks.add_task(
-            _refill_problem_bank,
-            child_row.copy(),
-            refill_ctx,
-            skip_if_count_gte=skip_guard,
-        )
-
     # Serve the recommended problem.
     problem_id = rec.get("problem_id")
     if problem_id:
+        # Proactive background refill: queue while a problem is still being served
+        # so the bank never visibly empties for the next request.
+        if rec.get("needs_refill"):
+            refill_ctx = rec.get("refill_context") or {
+                "trick_id": current_trick,
+                "difficulty": effective,
+                "grade": child_row["grade"],
+                "current_count": 0,
+            }
+            skip_guard = 0 if refill_ctx.get("current_count", 1) == 0 else 8
+            logger.debug(
+                "refill queued: child_id=%s current_trick=%s difficulty=%s "
+                "ctx=%s skip_guard=%d",
+                child_id, current_trick, effective, refill_ctx, skip_guard,
+            )
+            background_tasks.add_task(
+                _refill_problem_bank,
+                child_row.copy(),
+                refill_ctx,
+                skip_if_count_gte=skip_guard,
+            )
+
         prob_res = (
             admin.table("problems")
             .select(
@@ -764,6 +774,33 @@ async def get_problems(
                 ).eq("child_id", child_id).eq("trick_id", current_trick).execute()
             return ProblemsListResponse(
                 problems=[_row_to_problem_response(prob_res.data[0])],
+                phase_signal=None,
+            )
+
+    # Bank is fully exhausted — no problem_id returned by the recommender.
+    # Do a synchronous inline refill so this very request can serve a problem
+    # rather than returning empty and forcing the frontend to retry.
+    if rec.get("needs_refill"):
+        refill_ctx = rec.get("refill_context") or {
+            "trick_id": current_trick,
+            "difficulty": effective,
+            "grade": child_row["grade"],
+            "current_count": 0,
+        }
+        logger.info(
+            "Bank empty for trick=%s difficulty=%d — inline refill",
+            current_trick, effective,
+        )
+        new_problem = await _refill_problem_bank(
+            child_row.copy(), refill_ctx, skip_if_count_gte=0
+        )
+        if new_problem:
+            if current_phase == "discovery" and phase_row:
+                admin.table("trick_discoveries").update(
+                    {"discovery_problems_seen": disc_seen + 1}
+                ).eq("child_id", child_id).eq("trick_id", current_trick).execute()
+            return ProblemsListResponse(
+                problems=[_row_to_problem_response(new_problem)],
                 phase_signal=None,
             )
 

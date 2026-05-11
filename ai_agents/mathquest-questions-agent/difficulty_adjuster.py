@@ -191,11 +191,11 @@ def compute_phase_update(
     #                unlocked_tricks=["A1","A2"]
     # Example output: {"phase_update": "discovery", "trick_update": "A2"}
 
-    # Discovery phase: advance to practice once enough problems have been seen.
-    # If below threshold, fall through to the final return (no change).
-    if current_phase == "discovery":
-        if phase_counters["discovery_problems_seen"] >= DISCOVERY_PROBLEMS_REQUIRED:
-            return {"phase_update": "practice", "trick_update": None}
+    # Discovery → practice is owned solely by the recommender's phase_signal="reveal" path.
+    # If the adjuster also made this transition it would write current_phase="practice" to
+    # the DB (via _apply_adjuster_results) before the frontend ever received the reveal
+    # signal, silently bypassing the reveal animation on every play-through.
+    # The adjuster is only responsible for practice-phase transitions.
 
     # Practice phase: advance if mastered OR if the trick cap is hit.
     # The cap prevents the child grinding the same trick past MAX_PROBLEMS_PER_TRICK
@@ -209,10 +209,13 @@ def compute_phase_update(
         # set[str] — fast membership check for already-unlocked tricks
         unlocked_set = set(unlocked_tricks)
 
-        # str or None — next locked trick whose full prerequisite chain is already unlocked
+        # str or None — next locked trick whose full prerequisite chain is already unlocked.
+        # Skip current_trick: without this guard, a child with an empty unlocked_set would
+        # pick the very first trick in TRICK_SEQUENCE (which has no prerequisites), and if
+        # that happens to be current_trick the child loops back to the same trick forever.
         next_trick = None
         for trick in TRICK_SEQUENCE:
-            if trick in unlocked_set:
+            if trick in unlocked_set or trick == current_trick:
                 continue
             # list[str] — prerequisites for this trick from the graph
             prereqs = PREREQUISITES.get(trick, [])

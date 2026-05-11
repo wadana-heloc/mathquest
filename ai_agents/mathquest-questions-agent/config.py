@@ -140,8 +140,11 @@ RECENT_PROBLEMS_CAP = 5
 # check phase transitions. Never hardcode these in the module files.
 # ---------------------------------------------------------------------------
 
-# int — minimum unseen problems remaining before triggering a refill request
-MIN_BANK_SIZE = 5
+# int — minimum unseen problems remaining before triggering a refill request.
+# Must be less than the number of problems per (trick, difficulty) slot so the
+# refill only fires when the bank is genuinely low, not on every single request.
+# With 4 problems per slot, 2 means "start refilling when 1 unseen problem remains".
+MIN_BANK_SIZE = 2
 
 # int — number of discovery-phase problems before trick reveal is triggered
 DISCOVERY_PROBLEMS_REQUIRED = 2

@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import logging
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, status
@@ -41,6 +42,8 @@ from app.errors import (
     WeakPassword,
 )
 from app.schemas.parent import (
+    AnalysisPeriod,
+    ChildAnalysisResponse,
     ChildCreateRequest,
     ChildCreateResponse,
     ChildDifficultyResponse,
@@ -508,6 +511,64 @@ async def update_child_difficulty(
     return ChildDifficultyResponse(
         child_id=child_id,
         difficulty_ceiling=refreshed.data[0]["difficulty_ceiling"],
+    )
+
+
+# -----------------------------------------------------------------------------
+# GET /parent/children/{child_id}/analysis/{period} — child activity summary
+# -----------------------------------------------------------------------------
+
+
+@router.get(
+    "/children/{child_id}/analysis/{period}",
+    response_model=ChildAnalysisResponse,
+    summary="Return a child's activity summary for the last 7 or 30 days (parent-authed).",
+)
+async def get_child_analysis(
+    child_id: str,
+    period: AnalysisPeriod,
+    current: AuthUser = Depends(get_current_user),
+) -> ChildAnalysisResponse:
+    """Return aggregated activity stats for one child over a rolling window.
+
+    ``period`` must be ``7d`` or ``30d``.  The window is calculated from
+    ``now()`` backwards, using ``problem_attempts.answered_at`` (the timestamp
+    of the child's most recent attempt on each problem).
+
+    Metrics:
+    - **attempted** — distinct problems whose most recent attempt falls in the window.
+    - **correct** — problems solved correctly on the first try (``solved_correctly=true``
+      AND ``previously_failed=false``) within the window.
+    - **hints_used** — total hint tiers consumed across all attempts in the window.
+    """
+    _require_parent(current)
+    child_row = _require_owned_child(child_id, str(current.id))
+
+    days = 7 if period == AnalysisPeriod.days_7 else 30
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    admin = get_admin_supabase()
+    res = (
+        admin.table("problem_attempts")
+        .select("solved_correctly, previously_failed, hints_used")
+        .eq("child_id", child_row["id"])
+        .gte("answered_at", cutoff.isoformat())
+        .execute()
+    )
+
+    rows = res.data or []
+    attempted = len(rows)
+    correct = sum(
+        1 for r in rows if r["solved_correctly"] and not r["previously_failed"]
+    )
+    hints = sum(r["hints_used"] for r in rows)
+
+    return ChildAnalysisResponse(
+        child_id=child_id,
+        period=period.value,
+        attempted=attempted,
+        correct=correct,
+        hints_used=hints,
     )
 
 

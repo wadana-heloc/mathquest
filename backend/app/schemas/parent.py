@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 from datetime import date, datetime
+from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
@@ -117,6 +118,23 @@ class StreakResponse(BaseModel):
 
     streak_current: int
     streak_best: int
+
+
+class AnalysisPeriod(str, Enum):
+    """Valid period values for the child analysis endpoint."""
+
+    days_7 = "7d"
+    days_30 = "30d"
+
+
+class ChildAnalysisResponse(BaseModel):
+    """Response for ``GET /parent/children/{child_id}/analysis/{period}``."""
+
+    child_id: str
+    period: str
+    attempted: int
+    correct: int
+    hints_used: int
 
 
 class ChildDifficultyUpdate(BaseModel):

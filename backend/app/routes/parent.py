@@ -212,7 +212,7 @@ async def create_child(
 
     # Step 3: insert public.children. If this fails we roll back the auth
     # user so the next signup attempt with the same email works.
-    insert_payload: dict[str, Any] = {"user_id": str(new_user_id), "grade": payload.grade}
+    insert_payload: dict[str, Any] = {"user_id": str(new_user_id), "grade": payload.grade, "current_trick": "C4"}
     if payload.avatar_id is not None:
         insert_payload["avatar_id"] = payload.avatar_id
     if payload.date_of_birth is not None:

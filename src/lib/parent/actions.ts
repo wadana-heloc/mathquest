@@ -251,6 +251,40 @@ export async function fetchChildTricks(childId: string): Promise<ChildTrick[]> {
   }
 }
 
+// ── Generate Progress Report ──────────────────────────────────────────────────
+
+export type GenerateReportResult =
+  | { text: string; error?: never }
+  | { text?: never; error: string; errorCode: string }
+
+export async function generateReport(
+  childGameId: string,
+  periodDays: number = 30
+): Promise<GenerateReportResult> {
+  try {
+    const data = await apiPost<{ report: string | null; reason: string | null }>(
+      `/parent/children/${childGameId}/reports/generate`,
+      { period_days: periodDays }
+    )
+    console.log('[generateReport] Raw API response:', JSON.stringify(data, null, 2))
+
+    if (data.report === null) {
+      const code = data.reason ?? 'api_error'
+      return { error: code, errorCode: code }
+    }
+
+    return { text: data.report }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Failed to generate report.'
+    console.log('[generateReport] Error:', msg)
+
+    if (msg.includes('report_agent_unavailable') || msg.includes('503')) {
+      return { error: 'report_agent_unavailable', errorCode: 'report_agent_unavailable' }
+    }
+    return { error: msg, errorCode: 'unknown' }
+  }
+}
+
 // ── Daily Analysis ────────────────────────────────────────────────────────────
 
 export interface DailyProblem {

@@ -259,6 +259,8 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/lib/hooks/useUser";
 import { useChildProfile } from "@/lib/hooks/useChildProfile";
+import { useChildStats } from "@/lib/hooks/useChildStats";
+import { QuestStatsPanel } from "@/components/game/QuestStatsPanel";
 import MathParticles from "@/components/phaser/MathParticles";
 import { LogoutButton } from "@/components/game/LogoutModal";
 import { SettingsButton } from "@/components/game/SettingsModal";
@@ -592,12 +594,11 @@ function LoadingScreen() {
 export default function GamePage() {
   const { user, loading } = useUser();
   const { profile, loading: profileLoading } = useChildProfile();
+  const { summary, stories } = useChildStats();
   const router = useRouter();
 
-  const coins = profile?.coins ?? 0;
-  const streak = profile?.streak ?? 0;
-  const storyChapters = 0;  // not yet in DB
-  const stars = 0;           // not yet in DB
+  const coins       = profile?.coins ?? 0;
+  const streak      = profile?.streak ?? 0;
   const currentZone = profile?.currentZone ?? 1;
 
   const [selectedZone, setSelectedZone] = useState<number>(1);
@@ -778,7 +779,7 @@ export default function GamePage() {
                 />
                 <StatCard
                   icon="📖"
-                  value={storyChapters}
+                  value={stories.total_approved}
                   label="Stories"
                   colorClass="text-teal"
                   borderClass="border-teal/25"
@@ -786,9 +787,9 @@ export default function GamePage() {
                   animDelay="0.5s"
                 />
                 <StatCard
-                  icon="⭐"
-                  value={stars}
-                  label="Stars"
+                  icon="💡"
+                  value={summary.lifetime.total_insights}
+                  label="Insights"
                   colorClass="text-violet"
                   borderClass="border-violet/25"
                   bgClass="bg-violet/8"
@@ -831,6 +832,16 @@ export default function GamePage() {
                 </div>
               </div>
             </div>
+
+            {/* ── Quest Stats Panel ──────────────────────────────────────── */}
+            {profile && user && (
+              <QuestStatsPanel
+                profile={profile}
+                summary={summary}
+                stories={stories}
+                name={displayNameOverride ?? profile.displayName ?? user.email ?? "Adventurer"}
+              />
+            )}
 
           </div>
 

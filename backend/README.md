@@ -87,6 +87,10 @@ cp .env.example .env
 #    - supabase/migrations/0016_create_problem_attempts.sql
 #    - supabase/migrations/0017_add_difficulty_to_problem_attempts.sql
 #    - supabase/migrations/0018_add_missing_tricks.sql
+#    - supabase/migrations/0019_update_problems_category_check.sql
+#    - supabase/migrations/0020_remove_problems_category_check.sql
+#    - supabase/migrations/0021_create_stories.sql
+#    - supabase/migrations/0022_grant_stories_service_role.sql
 
 # 5. Run
 uvicorn app.main:app --reload --port 8000
@@ -135,6 +139,8 @@ from `public.users` on every call (TDD §9.1) — a child's token gets a
 | `GET   /parent/children/{child_id}/analysis/concepts` | parent | Returns all trick categories the child has attempted with error rates. `error_rate` = % of attempts where `previously_failed=true`, rounded to nearest integer. Sorted highest error rate first. Returns `{ child_id, concepts: [{ concept, attempted, error_rate }] }`. Empty list if no attempts yet. |
 | `GET   /parent/children/{child_id}/analysis/{period}` | parent | Activity summary for one child. `period` = `7d` or `30d` (rolling window from now). Returns `{ child_id, period, attempted, correct, hints_used }`. `attempted` = distinct problems attempted in window; `correct` = first-try correct answers (`solved_correctly=true` AND `previously_failed=false`); `hints_used` = total hint tiers used. |
 | `POST  /parent/children/{child_id}/reports/generate` | parent | Generate an AI progress report. Body: `{ "period_days": 30 }` (optional, 1–365, default 30). Assembles 5 queries (child info, attempts, problems, trick_discoveries, tricks) then calls the report agent directly. Retries once on `api_error`. Returns `{ report: string }` or `{ report: null, reason: "api_error" }`. Returns `503 report_agent_unavailable` if agent import fails. |
+| `POST  /parent/children/{child_id}/stories/generate` | parent | Generate a story preview. Body: `{ "parent_prompt": str }`. Calls `generate_story()` from `ai_agents/story-agent` directly (no DB write). Returns `{ chapters: [str], word_count: int }`. `503 story_agent_unavailable` if import fails. |
+| `POST  /parent/children/{child_id}/stories`          | parent | Save an approved story. Body: `{ "chapters": [str], "word_count": int }`. Inserts into `public.stories`. Returns `{ id, child_id, chapters, word_count, created_at }`. 201 on success. |
 | `POST  /parent/children/{child_id}/reset/zone`   | parent | Reset `children.current_zone` to 1. Returns `{ success: true }`. |
 | `POST  /parent/children/{child_id}/reset/coins`  | parent | Reset `children.coins` to 0. Returns `{ success: true }`. |
 | `POST  /parent/children/{child_id}/reset/tricks` | parent | Delete all `trick_discoveries` rows for the child and set `children.current_trick = 'C4'`. Irreversible. Returns `{ success: true }`. |
@@ -158,6 +164,7 @@ All `/child/*` endpoints require a **child** bearer token. A parent token gets `
 | `PATCH /child/streak`   | child | Body `{ correct: bool }`. Increments `streak_current` (and promotes `streak_best`) when `correct=true`; resets `streak_current` to 0 when `correct=false`. Returns `{ streak_current, streak_best }`. Uses SELECT-after-UPDATE. |
 | `GET /child/tricks`        | child | Return all tricks the child has unlocked (`unlocked=true` in `trick_discoveries`). Response: `{ unlocked_tricks: [{ trick_id, name, category, description, insight_count, unlocked_at }] }`. Empty list if none unlocked yet. |
 | `GET /child/stats/summary` | child | Powers the stats panel. Returns `{ lifetime, today, this_week }`. `lifetime`: all-time totals, fastest solve ms + stem, tricks unlocked, total insights. `today`: UTC-day progress vs hardcoded goal of 5. `this_week`: Mon–Sun UTC totals + days active. `correct` = first-try (`solved_correctly=true AND previously_failed=false`). `fastest_solve_ms`/`fastest_today_ms` are `null` if no timed correct solves. |
+| `GET /child/stories/latest` | child | Returns the most recent approved story for the child (`{ id, child_id, chapters, word_count, created_at }`), or `null` (200) if no story has been saved yet. |
 
 ## /problems endpoints
 

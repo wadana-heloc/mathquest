@@ -36,6 +36,21 @@ try:
 except ImportError:
     _REPORT_AGENT_AVAILABLE = False
 
+# ---------------------------------------------------------------------------
+# Story agent — direct Python import (same pattern as report agent).
+# ---------------------------------------------------------------------------
+_STORY_AGENT_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "ai_agents", "story-agent")
+)
+if _STORY_AGENT_DIR not in sys.path:
+    sys.path.insert(0, _STORY_AGENT_DIR)
+
+try:
+    from generate_story import generate_story as _generate_story  # type: ignore[import]
+    _STORY_AGENT_AVAILABLE = True
+except ImportError:
+    _STORY_AGENT_AVAILABLE = False
+
 from fastapi import APIRouter, Depends, status
 from gotrue.errors import AuthApiError  # type: ignore[import-not-found]
 
@@ -80,6 +95,10 @@ from app.schemas.parent import (
     GenerateReportResponse,
     ParentSettings,
     ParentSettingsUpdate,
+    StorySaveRequest,
+    StoryGenerateRequest,
+    StoryGenerateResponse,
+    StoryResponse,
     WeekAnalysisResponse,
 )
 from app.schemas.tricks import UnlockedTrick, UnlockedTricksResponse
@@ -1259,6 +1278,84 @@ async def delete_child(
         )
 
     get_admin_supabase().auth.admin.delete_user(child_row["user_id"])
+
+
+# -----------------------------------------------------------------------------
+# POST /parent/children/{child_id}/stories/generate — AI story preview
+# POST /parent/children/{child_id}/stories         — save approved story
+# -----------------------------------------------------------------------------
+
+
+@router.post(
+    "/children/{child_id}/stories/generate",
+    response_model=StoryGenerateResponse,
+    summary="Generate a story preview for a child via the story agent (no DB write).",
+)
+async def generate_child_story(
+    child_id: str,
+    body: StoryGenerateRequest,
+    current: AuthUser = Depends(get_current_user),
+) -> StoryGenerateResponse:
+    """Call the story agent with the parent's prompt and return a chapter preview.
+
+    Nothing is persisted. The parent can edit the returned chapters in the UI
+    and then call ``POST /parent/children/{child_id}/stories`` to save.
+
+    Returns ``503 story_agent_unavailable`` if the story agent could not be
+    imported (missing ``anthropic`` package or ``ANTHROPIC_API_KEY``).
+    """
+    if not _STORY_AGENT_AVAILABLE:
+        raise APIError(
+            "Story agent is unavailable. Ensure the anthropic package is installed "
+            "and ANTHROPIC_API_KEY is set.",
+            code="story_agent_unavailable",
+            status_code=503,
+        )
+    _require_parent(current)
+    _require_owned_child(child_id, str(current.id))
+
+    result = _generate_story(parent_prompt=body.parent_prompt)
+    return StoryGenerateResponse(chapters=result["chapters"], word_count=result["word_count"])
+
+
+@router.post(
+    "/children/{child_id}/stories",
+    response_model=StoryResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Save a parent-approved story for a child.",
+)
+async def save_child_story(
+    child_id: str,
+    body: StorySaveRequest,
+    current: AuthUser = Depends(get_current_user),
+) -> StoryResponse:
+    """Insert a story row into ``public.stories`` for the specified child.
+
+    The parent supplies the final chapters (possibly edited after the
+    generate preview) and the word count. The child can then read the
+    latest story via ``GET /child/stories/latest``.
+    """
+    _require_parent(current)
+    child_row = _require_owned_child(child_id, str(current.id))
+    admin = get_admin_supabase()
+
+    res = (
+        admin.table("stories")
+        .insert({
+            "child_id": child_row["id"],
+            "chapters": body.chapters,
+            "word_count": body.word_count,
+        })
+        .execute()
+    )
+    row = res.data[0]
+    return StoryResponse(
+        id=row["id"],
+        child_id=row["child_id"],
+        chapters=row["chapters"],
+        word_count=row["word_count"],
+        created_at=row["created_at"],
+    )
 
 
 # -----------------------------------------------------------------------------

@@ -25,6 +25,7 @@ from app.schemas.parent import (
     StatsSummaryResponse,
     StreakResponse,
     StreakUpdateRequest,
+    StoryResponse,
     TodayStats,
     WeekStats,
 )
@@ -433,4 +434,46 @@ async def get_stats_summary(
             correct_rate=week_correct_rate,
             days_active=week_days_active,
         ),
+    )
+
+
+# -----------------------------------------------------------------------------
+# GET /child/stories/latest — most recent approved story for this child
+# -----------------------------------------------------------------------------
+
+
+@router.get(
+    "/stories/latest",
+    response_model=StoryResponse | None,
+    summary="Return the latest approved story for the authenticated child, or null if none.",
+)
+async def get_latest_story(
+    current: AuthUser = Depends(get_current_user),
+) -> StoryResponse | None:
+    """Return the most recently saved story for the child.
+
+    Returns ``null`` (200) when no story has been approved yet so the
+    frontend can render a 'no story yet' state without catching a 404.
+    """
+    _, child_row = _require_child(current)
+    child_id = child_row["id"]
+    admin = get_admin_supabase()
+
+    res = (
+        admin.table("stories")
+        .select("id, child_id, chapters, word_count, created_at")
+        .eq("child_id", child_id)
+        .order("created_at", desc=True)
+        .limit(1)
+        .execute()
+    )
+    if not res.data:
+        return None
+    row = res.data[0]
+    return StoryResponse(
+        id=row["id"],
+        child_id=row["child_id"],
+        chapters=row["chapters"],
+        word_count=row["word_count"],
+        created_at=row["created_at"],
     )

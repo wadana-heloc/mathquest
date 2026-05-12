@@ -275,6 +275,36 @@ class StatsSummaryResponse(BaseModel):
     this_week: WeekStats
 
 
+class StoryGenerateRequest(BaseModel):
+    """Body for ``POST /parent/children/{child_id}/stories/generate``."""
+
+    parent_prompt: str = Field(min_length=1, max_length=2000)
+
+
+class StoryGenerateResponse(BaseModel):
+    """Preview returned by the generate endpoint — not yet persisted."""
+
+    chapters: list[str]
+    word_count: int
+
+
+class StorySaveRequest(BaseModel):
+    """Body for ``POST /parent/children/{child_id}/stories``."""
+
+    chapters: list[str] = Field(min_length=1)
+    word_count: int = Field(ge=1)
+
+
+class StoryResponse(BaseModel):
+    """A persisted story row returned by save and child read endpoints."""
+
+    id: uuid.UUID
+    child_id: uuid.UUID
+    chapters: list[str]
+    word_count: int
+    created_at: datetime
+
+
 class ParentSettingsUpdate(BaseModel):
     """Partial-update payload for ``PATCH /parent/settings``.
 

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useTransition, useRef } from "react";
 import { logout } from "@/lib/auth/actions";
-import { addChild, deleteChild, resetZone, resetCoins, resetTricks, generateStory, generateReport, fetchChildTricks, fetchChildAnalysis, fetchWeeklyActivity, fetchConceptAnalysis, fetchDailyAnalysis, updateDifficultyCeiling, type DBChild, type GeneratedStory, type StoryChapter, type ChildTrick, type WeeklyActivityDay, type ConceptStat, type DailyAnalysis } from "@/lib/parent/actions";
+import { addChild, deleteChild, resetZone, resetCoins, resetTricks, generateStory, saveStory, generateReport, fetchChildTricks, fetchChildAnalysis, fetchWeeklyActivity, fetchConceptAnalysis, fetchDailyAnalysis, updateDifficultyCeiling, type DBChild, type GeneratedStory, type ChildTrick, type WeeklyActivityDay, type ConceptStat, type DailyAnalysis } from "@/lib/parent/actions";
 import AddChildModal from "@/components/parent/AddChildModal";
 import { GameSpinner, Skeleton, StatCardSkeleton, ConceptBarSkeleton, ProblemRowSkeleton, TrickCardSkeleton, ReportSectionSkeleton } from "@/components/parent/GameLoader";
 import type { AddChildForm } from "@/types/parent";
@@ -1032,8 +1032,9 @@ function SettingsTab({ child, childGameId, onSave, onAudioChange }: {
   );
 }
 
-function ChapterAccordion({ chapter, open, onToggle }: {
-  chapter: StoryChapter;
+function ChapterAccordion({ index, text, open, onToggle }: {
+  index: number;
+  text: string;
   open: boolean;
   onToggle: () => void;
 }) {
@@ -1042,9 +1043,9 @@ function ChapterAccordion({ chapter, open, onToggle }: {
       <button type="button" onClick={onToggle}
         className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-stone-50 transition-colors text-left">
         <div className="w-7 h-7 rounded-lg bg-primary/10 flex items-center justify-center font-display font-800 text-primary text-xs flex-shrink-0">
-          {chapter.number}
+          {index}
         </div>
-        <span className="flex-1 text-sm font-semibold text-stone-700">{chapter.title}</span>
+        <span className="flex-1 text-sm font-semibold text-stone-700">Chapter {index}</span>
         <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#a8a29e" strokeWidth="2"
           className={`flex-shrink-0 transition-transform duration-200 ${open ? "rotate-180" : ""}`}>
           <path d="M2 5l5 5 5-5"/>
@@ -1053,7 +1054,7 @@ function ChapterAccordion({ chapter, open, onToggle }: {
       {open && (
         <div className="px-5 pb-5 pt-1">
           <div className="p-4 bg-stone-50 rounded-xl text-sm text-stone-600 leading-relaxed whitespace-pre-wrap">
-            {chapter.content}
+            {text}
           </div>
         </div>
       )}
@@ -1061,37 +1062,87 @@ function ChapterAccordion({ chapter, open, onToggle }: {
   );
 }
 
+type StoryStatus = "pending" | "editing" | "saved" | "rejected";
+type SessionStory = {
+  tempId: string;
+  story: GeneratedStory;
+  editedChapters: string[];
+  status: StoryStatus;
+  savedId?: string;
+};
+
 function ContentTab({ childId, childName }: { childId: string; childName: string }) {
-  const [script, setScript] = useState("");
+  const [prompt, setPrompt] = useState("");
   const [generating, setGenerating] = useState(false);
   const [genError, setGenError] = useState<string | null>(null);
-  const [stories, setStories] = useState<GeneratedStory[]>([]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [sessions, setSessions] = useState<SessionStory[]>([]);
+  const [selectedTempId, setSelectedTempId] = useState<string | null>(null);
   const [openChapter, setOpenChapter] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
 
-  const selected = stories.find(s => s.id === selectedId) ?? null;
+  const selected = sessions.find(s => s.tempId === selectedTempId) ?? null;
+  const visibleSessions = sessions.filter(s => s.status !== "rejected");
+
+  function patchSelected(patch: Partial<SessionStory>) {
+    setSessions(prev => prev.map(s => s.tempId === selectedTempId ? { ...s, ...patch } : s));
+  }
 
   async function handleGenerate() {
-    if (!script.trim() || generating) return;
+    if (!prompt.trim() || generating) return;
     setGenError(null);
     setGenerating(true);
-    const result = await generateStory(childId, script.trim());
+    const result = await generateStory(childId, prompt.trim());
     setGenerating(false);
-    if (result.error) {
-      setGenError(result.error);
-      return;
-    }
+    if (result.error) { setGenError(result.error); return; }
     if (result.story) {
-      setStories(prev => [result.story!, ...prev]);
-      setSelectedId(result.story!.id);
+      const tempId = `tmp-${Date.now()}`;
+      setSessions(prev => [{
+        tempId,
+        story: result.story!,
+        editedChapters: [...result.story!.chapters],
+        status: "pending",
+      }, ...prev]);
+      setSelectedTempId(tempId);
       setOpenChapter(1);
-      setScript("");
+      setPrompt("");
+      setSaveError(null);
     }
+  }
+
+  async function handleSave(chapters: string[]) {
+    if (!selected || saving) return;
+    setSaveError(null);
+    setSaving(true);
+    const wordCount = chapters.join(" ").split(/\s+/).filter(Boolean).length;
+    const result = await saveStory(childId, { chapters, word_count: wordCount });
+    setSaving(false);
+    if (result.error) { setSaveError(result.error); return; }
+    patchSelected({ status: "saved", savedId: result.saved!.id });
+  }
+
+  function handleReject() {
+    patchSelected({ status: "rejected" });
+    const next = visibleSessions.find(s => s.tempId !== selectedTempId);
+    setSelectedTempId(next?.tempId ?? null);
+    setSaveError(null);
+  }
+
+  function handleStartEdit() {
+    patchSelected({ status: "editing", editedChapters: [...(selected!.story.chapters)] });
+    setOpenChapter(1);
+  }
+
+  function handleEditChapter(i: number, val: string) {
+    if (!selected) return;
+    const updated = [...selected.editedChapters];
+    updated[i] = val;
+    patchSelected({ editedChapters: updated });
   }
 
   return (
     <div className="space-y-4">
-      {/* Script input */}
+      {/* Prompt input */}
       <div className="bg-white rounded-2xl border border-stone-100 overflow-hidden">
         <div className="px-5 py-4 border-b border-stone-50">
           <h3 className="font-display font-800 text-stone-800 text-sm">Generate a Story</h3>
@@ -1099,25 +1150,20 @@ function ContentTab({ childId, childName }: { childId: string; childName: string
         </div>
         <div className="p-5 space-y-3">
           <textarea
-            value={script}
-            onChange={e => setScript(e.target.value)}
+            value={prompt}
+            onChange={e => setPrompt(e.target.value)}
             placeholder={`e.g. A space adventure where ${childName} must solve multiplication puzzles to repair a rocket and return home…`}
             rows={4}
             disabled={generating}
             className="w-full px-4 py-3 rounded-xl border border-stone-200 bg-stone-50 text-sm text-stone-700 resize-none outline-none focus:border-gold focus:ring-2 focus:ring-gold/20 transition-all leading-relaxed placeholder:text-stone-300 disabled:opacity-50"
           />
-          {genError && (
-            <p className="text-xs text-coral font-medium">{genError}</p>
-          )}
+          {genError && <p className="text-xs text-coral font-medium">{genError}</p>}
           <div className="flex justify-end">
             <button type="button" onClick={handleGenerate}
-              disabled={!script.trim() || generating}
+              disabled={!prompt.trim() || generating}
               className="h-10 px-6 rounded-xl bg-primary text-white text-sm font-display font-800 hover:bg-navy-light transition-all shadow-sm disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2">
               {generating ? (
-                <>
-                  <span className="w-3.5 h-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin flex-shrink-0" />
-                  Generating…
-                </>
+                <><span className="w-3.5 h-3.5 rounded-full border-2 border-white/30 border-t-white animate-spin flex-shrink-0" />Generating…</>
               ) : "✨ Generate Story"}
             </button>
           </div>
@@ -1127,66 +1173,150 @@ function ContentTab({ childId, childName }: { childId: string; childName: string
       {/* Loading skeleton */}
       {generating && (
         <div className="bg-white rounded-2xl border border-stone-100 overflow-hidden">
-          <div className="px-5 py-7 border-b border-stone-50 flex flex-col items-center gap-2">
+          <div className="px-5 py-7 flex flex-col items-center gap-2">
             <GameSpinner emoji="📖" label="Crafting your story" size="sm" />
           </div>
-          <div className="p-5 space-y-3">
-            {[
-              { title: "w-44", body: ["w-full", "w-5/6", "w-4/5"] },
-              { title: "w-36", body: ["w-full", "w-11/12"] },
-              { title: "w-40", body: ["w-full", "w-3/4", "w-11/12"] },
-            ].map((s, i) => (
+          <div className="px-5 pb-5 space-y-3">
+            {[["w-44","w-full","w-5/6"],["w-36","w-full","w-11/12"],["w-40","w-full","w-3/4"]].map((ws, i) => (
               <div key={i} className="p-3 rounded-xl border border-stone-50 space-y-2">
-                <Skeleton className={`h-3 ${s.title}`} />
-                {s.body.map((w, j) => (
-                  <Skeleton key={j} className={`h-2.5 ${w}`} />
-                ))}
+                <Skeleton className={`h-3 ${ws[0]}`} />
+                {ws.slice(1).map((w, j) => <Skeleton key={j} className={`h-2.5 ${w}`} />)}
               </div>
             ))}
           </div>
         </div>
       )}
 
-      {/* Story selector (when multiple stories generated in session) */}
-      {!generating && stories.length > 1 && (
+      {/* Session story selector (when multiple non-rejected stories exist) */}
+      {!generating && visibleSessions.length > 1 && (
         <div className="flex gap-2 overflow-x-auto pb-1 -mb-1">
-          {stories.map(s => (
-            <button key={s.id} type="button"
-              onClick={() => { setSelectedId(s.id); setOpenChapter(null); }}
-              className={`flex-shrink-0 h-9 px-4 rounded-xl text-xs font-semibold transition-all ${selectedId === s.id ? "bg-primary text-white shadow-sm" : "bg-white border border-stone-200 text-stone-500 hover:border-stone-300"}`}>
-              {s.title}
+          {visibleSessions.map((s, i) => (
+            <button key={s.tempId} type="button"
+              onClick={() => { setSelectedTempId(s.tempId); setOpenChapter(null); setSaveError(null); }}
+              className={`flex-shrink-0 h-9 px-4 rounded-xl text-xs font-semibold transition-all ${selectedTempId === s.tempId ? "bg-primary text-white shadow-sm" : "bg-white border border-stone-200 text-stone-500 hover:border-stone-300"}`}>
+              Story {visibleSessions.length - i}
+              {s.status === "saved" && <span className="ml-1.5 opacity-70">✓</span>}
             </button>
           ))}
         </div>
       )}
 
-      {/* Generated story */}
-      {!generating && selected && (
+      {/* Story card */}
+      {!generating && selected && selected.status !== "rejected" && (
         <div className="bg-white rounded-2xl border border-stone-100 overflow-hidden">
-          <div className="px-5 py-4 border-b border-stone-50 flex items-start gap-3">
+
+          {/* Header */}
+          <div className="px-5 py-4 border-b border-stone-50 flex items-center gap-3">
             <div className="flex-1 min-w-0">
-              <h3 className="font-display font-800 text-stone-800 text-base">{selected.title}</h3>
-              <p className="text-xs text-stone-400 mt-0.5 line-clamp-1 italic">"{selected.generated_at}"</p>
+              <h3 className="font-display font-800 text-stone-800 text-base">{childName}'s Story</h3>
+              <p className="text-xs text-stone-400 mt-0.5">
+                {selected.story.chapters.length} chapters · {selected.story.word_count} words
+                {selected.status === "editing" && <span className="ml-2 text-gold font-semibold">Editing</span>}
+              </p>
             </div>
-            <span className="text-[10px] text-stone-400 flex-shrink-0 mt-1 whitespace-nowrap">
-              {selected.chapters.length} chapters
-            </span>
+            {selected.status === "saved" && (
+              <span className="flex items-center gap-1.5 text-xs font-display font-800 text-primary bg-gold/20 border border-gold/40 rounded-xl px-3 py-1.5">
+                <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M2 6l3 3 5-5"/></svg>
+                Saved
+              </span>
+            )}
           </div>
-          <div>
-            {selected.chapters.map(ch => (
-              <ChapterAccordion
-                key={ch.number}
-                chapter={ch}
-                open={openChapter === ch.number}
-                onToggle={() => setOpenChapter(openChapter === ch.number ? null : ch.number)}
-              />
-            ))}
-          </div>
+
+          {/* Chapters — view or edit */}
+          {selected.status === "editing" ? (
+            <div className="divide-y divide-stone-50">
+              {selected.editedChapters.map((text, i) => (
+                <div key={i} className="px-5 py-4 space-y-2">
+                  <p className="text-xs font-semibold text-stone-500">Chapter {i + 1}</p>
+                  <textarea
+                    aria-label={`Chapter ${i + 1} content`}
+                    value={text}
+                    onChange={e => handleEditChapter(i, e.target.value)}
+                    rows={6}
+                    className="w-full px-3 py-2.5 rounded-xl border border-stone-200 bg-stone-50 text-sm text-stone-700 resize-y outline-none focus:border-gold focus:ring-2 focus:ring-gold/20 transition-all leading-relaxed"
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div>
+              {selected.story.chapters.map((text, i) => (
+                <ChapterAccordion
+                  key={i}
+                  index={i + 1}
+                  text={text}
+                  open={openChapter === i + 1}
+                  onToggle={() => setOpenChapter(openChapter === i + 1 ? null : i + 1)}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Action bar */}
+          {selected.status !== "saved" && (
+            <div className="px-5 pt-4 pb-5 border-t-2 border-stone-100 bg-gradient-to-b from-stone-50 to-white space-y-2.5">
+              {saveError && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-50 border border-red-100">
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="#F97316" strokeWidth="2"><circle cx="7" cy="7" r="6"/><path d="M7 4v3M7 10h.01"/></svg>
+                  <p className="text-xs text-coral font-medium">{saveError}</p>
+                </div>
+              )}
+
+              {selected.status === "editing" ? (
+                /* Edit mode — Cancel + Save Changes */
+                <div className="space-y-2">
+                  <p className="text-[11px] text-stone-400 text-center font-medium tracking-wide uppercase">Review your edits</p>
+                  <button type="button"
+                    onClick={() => handleSave(selected.editedChapters)}
+                    disabled={saving}
+                    className="w-full h-12 rounded-2xl bg-gold text-primary text-sm font-display font-800 hover:brightness-105 active:scale-[.98] transition-all shadow-md shadow-gold/25 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                    {saving ? (
+                      <><span className="w-4 h-4 rounded-full border-2 border-primary/30 border-t-primary animate-spin flex-shrink-0" />Saving…</>
+                    ) : (
+                      <><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M2 8l4 4 8-8"/></svg>Save Changes</>
+                    )}
+                  </button>
+                  <button type="button"
+                    onClick={() => patchSelected({ status: "pending", editedChapters: [...selected.story.chapters] })}
+                    className="w-full h-10 rounded-2xl border border-stone-200 bg-white text-stone-500 text-sm font-semibold hover:bg-stone-50 hover:text-stone-700 active:scale-[.98] transition-all">
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                /* Pending — Save (primary) + row of Edit & Reject */
+                <div className="space-y-2">
+                  <p className="text-[11px] text-stone-400 text-center font-medium tracking-wide uppercase">What would you like to do?</p>
+                  <button type="button"
+                    onClick={() => handleSave(selected.story.chapters)}
+                    disabled={saving}
+                    className="w-full h-12 rounded-2xl bg-gold text-primary text-sm font-display font-800 hover:brightness-105 active:scale-[.98] transition-all shadow-md shadow-gold/25 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2">
+                    {saving ? (
+                      <><span className="w-4 h-4 rounded-full border-2 border-primary/30 border-t-primary animate-spin flex-shrink-0" />Saving…</>
+                    ) : (
+                      <><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M2 8l4 4 8-8"/></svg>Save Story</>
+                    )}
+                  </button>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={handleStartEdit}
+                      className="flex-1 h-10 rounded-2xl bg-primary/5 border border-primary/15 text-primary text-sm font-semibold hover:bg-primary/10 active:scale-[.98] transition-all flex items-center justify-center gap-1.5">
+                      <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 2l2 2-7 7H2v-2L9 2z"/></svg>
+                      Edit & Save
+                    </button>
+                    <button type="button" onClick={handleReject}
+                      className="flex-1 h-10 rounded-2xl bg-red-50 border border-red-100 text-coral text-sm font-semibold hover:bg-red-100 active:scale-[.98] transition-all flex items-center justify-center gap-1.5">
+                      <svg width="13" height="13" viewBox="0 0 13 13" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 2l9 9M11 2l-9 9"/></svg>
+                      Reject
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
 
       {/* Empty state */}
-      {!generating && stories.length === 0 && (
+      {!generating && visibleSessions.length === 0 && (
         <div className="bg-white rounded-2xl border border-stone-100 p-12 text-center">
           <div className="text-4xl mb-3">📖</div>
           <p className="text-sm font-semibold text-stone-600">No stories yet</p>
@@ -1922,7 +2052,7 @@ export default function ParentDashboardClient({ parentName, parentEmail, dbChild
                 )}
                 {tab === "settings"  && <SettingsTab child={child} childGameId={child.game_id} onSave={s => updateChild(child.id, { settings: s })} onAudioChange={audio => updateChild(child.id, { audio })} />}
                 {tab === "content" && (
-                  <ContentTab childId={child.id} childName={child.name} />
+                  <ContentTab childId={child.game_id} childName={child.name} />
                 )}
                 {tab === "reset" && (
                   <ResetTab

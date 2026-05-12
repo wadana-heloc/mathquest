@@ -2664,15 +2664,15 @@ export class Zone1Scene extends Phaser.Scene {
     const screenCX = cx - cam.scrollX
     const screenCY = cy - cam.scrollY
 
-    const coinPop = this.add.text(screenCX, screenCY - 30, `⭐ +1 Star!`, {
-      fontSize: '22px', fontFamily: 'Nunito, sans-serif', fontStyle: 'bold',
-      color: '#ffd700', stroke: '#b34400', strokeThickness: 4,
-    }).setOrigin(0.5).setScrollFactor(0).setDepth(65).setAlpha(0).setScale(0.5)
-    this.tweens.add({
-      targets: coinPop, y: screenCY - 90, alpha: 1, scaleX: 1.1, scaleY: 1.1,
-      duration: 500, ease: 'Back.easeOut',
-      onComplete: () => { this.tweens.add({ targets: coinPop, alpha: 0, y: screenCY - 120, duration: 350, delay: 600, ease: 'Quad.easeIn', onComplete: () => coinPop.destroy() }) },
-    })
+    // const coinPop = this.add.text(screenCX, screenCY - 30, `⭐ +1 Star!`, {
+    //   fontSize: '22px', fontFamily: 'Nunito, sans-serif', fontStyle: 'bold',
+    //   color: '#ffd700', stroke: '#b34400', strokeThickness: 4,
+    // }).setOrigin(0.5).setScrollFactor(0).setDepth(65).setAlpha(0).setScale(0.5)
+    // this.tweens.add({
+    //   targets: coinPop, y: screenCY - 90, alpha: 1, scaleX: 1.1, scaleY: 1.1,
+    //   duration: 500, ease: 'Back.easeOut',
+    //   onComplete: () => { this.tweens.add({ targets: coinPop, alpha: 0, y: screenCY - 120, duration: 350, delay: 600, ease: 'Quad.easeIn', onComplete: () => coinPop.destroy() }) },
+    // })
 
     // Particle burst
     const burstColors = [0xffd700, 0xff6b35, 0x00e5ff, 0x76ff03, 0xff4081, 0xffffff, 0xff1744, 0x00bcd4]

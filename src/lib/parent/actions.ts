@@ -130,31 +130,55 @@ export async function deleteChild(childGameId: string): Promise<{ error?: string
 
 // ── Generate Story ────────────────────────────────────────────────────────────
 
-export type StoryChapter = {
-  number: number
-  title: string
-  content: string
+export type GeneratedStory = {
+  chapters: string[]
+  word_count: number
 }
 
-export type GeneratedStory = {
+export type SavedStory = {
   id: string
-  title: string
-  chapters: StoryChapter[]
-  generated_at: string
+  child_id: string
+  chapters: string[]
+  word_count: number
+  created_at: string
 }
 
 export async function generateStory(
   childId: string,
-  script: string
+  prompt: string
 ): Promise<{ error?: string; story?: GeneratedStory }> {
+  const endpoint = `/parent/children/${childId}/stories/generate`
+  const body = { parent_prompt: prompt }
+  console.log('[generateStory] POST', endpoint, '→ body:', body)
   try {
-    const data = await apiPost<GeneratedStory>('/parent/stories/generate', {
-      child_id: childId,
-      script,
-    })
+    const data = await apiPost<GeneratedStory>(endpoint, body)
+    console.log('[generateStory] response:', data)
     return { story: data }
   } catch (err) {
-    return { error: err instanceof Error ? err.message : 'Story generation failed.' }
+    const msg = err instanceof Error ? err.message : 'Story generation failed.'
+    console.error('[generateStory] error:', msg, err)
+    if (msg.includes('story_agent_unavailable') || msg.includes('503')) {
+      return { error: 'Story service is currently unavailable. Please try again later.' }
+    }
+    return { error: msg }
+  }
+}
+
+export async function saveStory(
+  childId: string,
+  story: GeneratedStory
+): Promise<{ error?: string; saved?: SavedStory }> {
+  const endpoint = `/parent/children/${childId}/stories`
+  const body = { chapters: story.chapters, word_count: story.word_count }
+  console.log('[saveStory] POST', endpoint, '→ body:', body)
+  try {
+    const data = await apiPost<SavedStory>(endpoint, body)
+    console.log('[saveStory] response:', data)
+    return { saved: data }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'Failed to save story.'
+    console.error('[saveStory] error:', msg, err)
+    return { error: msg }
   }
 }
 

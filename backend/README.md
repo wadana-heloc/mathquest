@@ -156,7 +156,8 @@ All `/child/*` endpoints require a **child** bearer token. A parent token gets `
 | `GET /child/me`         | child | Return the caller's combined `ChildProfile` (merges `public.users` + `public.children`). |
 | `GET /child/streak`     | child | Return `{ streak_current, streak_best }` — lightweight read without fetching the full profile. |
 | `PATCH /child/streak`   | child | Body `{ correct: bool }`. Increments `streak_current` (and promotes `streak_best`) when `correct=true`; resets `streak_current` to 0 when `correct=false`. Returns `{ streak_current, streak_best }`. Uses SELECT-after-UPDATE. |
-| `GET /child/tricks`     | child | Return all tricks the child has unlocked (`unlocked=true` in `trick_discoveries`). Response: `{ unlocked_tricks: [{ trick_id, name, category, description, insight_count, unlocked_at }] }`. Empty list if none unlocked yet. |
+| `GET /child/tricks`        | child | Return all tricks the child has unlocked (`unlocked=true` in `trick_discoveries`). Response: `{ unlocked_tricks: [{ trick_id, name, category, description, insight_count, unlocked_at }] }`. Empty list if none unlocked yet. |
+| `GET /child/stats/summary` | child | Powers the stats panel. Returns `{ lifetime, today, this_week }`. `lifetime`: all-time totals, fastest solve ms + stem, tricks unlocked, total insights. `today`: UTC-day progress vs hardcoded goal of 5. `this_week`: Mon–Sun UTC totals + days active. `correct` = first-try (`solved_correctly=true AND previously_failed=false`). `fastest_solve_ms`/`fastest_today_ms` are `null` if no timed correct solves. |
 
 ## /problems endpoints
 

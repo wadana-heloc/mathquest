@@ -14,11 +14,20 @@ Endpoints:
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends
 
 from app.errors import APIError, ForbiddenRole, NotAuthenticated
-from app.schemas.parent import ChildProfile, StreakResponse, StreakUpdateRequest
+from app.schemas.parent import (
+    ChildProfile,
+    LifetimeStats,
+    StatsSummaryResponse,
+    StreakResponse,
+    StreakUpdateRequest,
+    TodayStats,
+    WeekStats,
+)
 from app.schemas.tricks import UnlockedTrick, UnlockedTricksResponse
 from app.security import AuthUser, get_current_user
 from app.supabase_clients import get_admin_supabase
@@ -277,4 +286,151 @@ async def update_streak(
     return StreakResponse(
         streak_current=row["streak_current"],
         streak_best=row["streak_best"],
+    )
+
+
+# -----------------------------------------------------------------------------
+# GET /child/stats/summary — lifetime, today, and this-week stats panel
+# -----------------------------------------------------------------------------
+
+_DAILY_GOAL = 5
+
+
+@router.get(
+    "/stats/summary",
+    response_model=StatsSummaryResponse,
+    summary="Powers the child stats panel — lifetime records, today's progress, and this week.",
+)
+async def get_stats_summary(
+    current: AuthUser = Depends(get_current_user),
+) -> StatsSummaryResponse:
+    """Aggregate stats across three time windows.
+
+    * ``lifetime`` — all-time records (attempts, accuracy, fastest solve, tricks/insights).
+    * ``today``    — UTC day progress against the hardcoded daily goal of 5 problems.
+    * ``this_week``— Mon–Sun UTC window (current calendar week).
+
+    ``correct`` always means first-try correct: ``solved_correctly=true AND
+    previously_failed=false``, consistent with all other analysis endpoints.
+    """
+    _, child_row = _require_child(current)
+    child_id = child_row["id"]
+    admin = get_admin_supabase()
+
+    # --- date boundaries (UTC) -----------------------------------------------
+    now = datetime.now(timezone.utc)
+    today_date = now.date()
+    week_start_date = today_date - timedelta(days=today_date.weekday())  # Monday
+
+    # --- Q1: all problem_attempts for this child ------------------------------
+    all_res = (
+        admin.table("problem_attempts")
+        .select("problem_id, solved_correctly, previously_failed, duration_ms, hints_used, answered_at")
+        .eq("child_id", child_id)
+        .execute()
+    )
+    all_attempts = all_res.data or []
+
+    # --- partition into lifetime buckets -------------------------------------
+    today_attempts: list[dict] = []
+    week_attempts: list[dict] = []
+    total_correct = 0
+    fastest_correct_ms: int | None = None
+    fastest_correct_problem_id: str | None = None
+
+    for a in all_attempts:
+        ts = datetime.fromisoformat(a["answered_at"])
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=timezone.utc)
+        a_date = ts.date()
+
+        if a["solved_correctly"] and not a["previously_failed"]:
+            total_correct += 1
+
+        dur = a["duration_ms"]
+        if a["solved_correctly"] and dur is not None:
+            if fastest_correct_ms is None or dur < fastest_correct_ms:
+                fastest_correct_ms = dur
+                fastest_correct_problem_id = a["problem_id"]
+
+        if a_date == today_date:
+            today_attempts.append(a)
+        if a_date >= week_start_date:
+            week_attempts.append(a)
+
+    total_attempted = len(all_attempts)
+    correct_rate = round(total_correct / total_attempted * 100) if total_attempted else 0
+
+    # --- Q2: stem of fastest lifetime solve -----------------------------------
+    fastest_stem: str | None = None
+    if fastest_correct_problem_id:
+        stem_res = (
+            admin.table("problems")
+            .select("stem")
+            .eq("id", fastest_correct_problem_id)
+            .limit(1)
+            .execute()
+        )
+        if stem_res.data:
+            fastest_stem = stem_res.data[0]["stem"]
+
+    # --- Q3: trick_discoveries — unlocked count + total insights -------------
+    # insight_detected is tracked per-trick as insight_count in trick_discoveries,
+    # not as a column on problem_attempts.
+    discoveries_res = (
+        admin.table("trick_discoveries")
+        .select("insight_count, unlocked")
+        .eq("child_id", child_id)
+        .execute()
+    )
+    discoveries = discoveries_res.data or []
+    tricks_unlocked = sum(1 for d in discoveries if d["unlocked"])
+    total_insights = sum(d["insight_count"] or 0 for d in discoveries)
+
+    # --- today stats ---------------------------------------------------------
+    today_attempted = len(today_attempts)
+    today_correct = sum(
+        1 for a in today_attempts if a["solved_correctly"] and not a["previously_failed"]
+    )
+    today_hints = sum(a["hints_used"] or 0 for a in today_attempts)
+    today_fastest_ms: int | None = None
+    for a in today_attempts:
+        dur = a["duration_ms"]
+        if a["solved_correctly"] and dur is not None:
+            if today_fastest_ms is None or dur < today_fastest_ms:
+                today_fastest_ms = dur
+
+    # --- this-week stats -----------------------------------------------------
+    week_attempted = len(week_attempts)
+    week_correct = sum(
+        1 for a in week_attempts if a["solved_correctly"] and not a["previously_failed"]
+    )
+    week_correct_rate = round(week_correct / week_attempted * 100) if week_attempted else 0
+    week_days_active = len(
+        {datetime.fromisoformat(a["answered_at"]).date() for a in week_attempts}
+    )
+
+    return StatsSummaryResponse(
+        lifetime=LifetimeStats(
+            total_attempted=total_attempted,
+            total_correct=total_correct,
+            correct_rate=correct_rate,
+            fastest_solve_ms=fastest_correct_ms,
+            fastest_problem=fastest_stem,
+            tricks_unlocked=tricks_unlocked,
+            total_insights=total_insights,
+        ),
+        today=TodayStats(
+            attempted=today_attempted,
+            correct=today_correct,
+            daily_goal=_DAILY_GOAL,
+            hints_used=today_hints,
+            fastest_today_ms=today_fastest_ms,
+        ),
+        this_week=WeekStats(
+            attempted=week_attempted,
+            correct=week_correct,
+            correct_rate=week_correct_rate,
+            days_active=week_days_active,
+        ),
     )

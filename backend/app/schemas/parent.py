@@ -233,6 +233,48 @@ class ChildDifficultyResponse(BaseModel):
     difficulty_ceiling: int
 
 
+# --- GET /child/stats/summary ------------------------------------------------
+
+
+class LifetimeStats(BaseModel):
+    """Lifetime aggregate stats for the child stats panel."""
+
+    total_attempted: int
+    total_correct: int
+    correct_rate: int
+    fastest_solve_ms: int | None
+    fastest_problem: str | None
+    tricks_unlocked: int
+    total_insights: int
+
+
+class TodayStats(BaseModel):
+    """Today's progress stats (UTC) for the child stats panel."""
+
+    attempted: int
+    correct: int
+    daily_goal: int
+    hints_used: int
+    fastest_today_ms: int | None
+
+
+class WeekStats(BaseModel):
+    """This week's stats (Mon–Sun UTC) for the child stats panel."""
+
+    attempted: int
+    correct: int
+    correct_rate: int
+    days_active: int
+
+
+class StatsSummaryResponse(BaseModel):
+    """Response for ``GET /child/stats/summary``."""
+
+    lifetime: LifetimeStats
+    today: TodayStats
+    this_week: WeekStats
+
+
 class ParentSettingsUpdate(BaseModel):
     """Partial-update payload for ``PATCH /parent/settings``.
 

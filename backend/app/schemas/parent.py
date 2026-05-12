@@ -144,6 +144,19 @@ class DayAnalysis(BaseModel):
     correct: int
 
 
+class GenerateReportRequest(BaseModel):
+    """Body for ``POST /parent/children/{child_id}/reports/generate``."""
+
+    period_days: int = Field(default=30, ge=1, le=365)
+
+
+class GenerateReportResponse(BaseModel):
+    """Response from the report agent."""
+
+    report: str | None
+    reason: str | None = None
+
+
 class ActionSuccessResponse(BaseModel):
     """Generic success response for destructive child management actions."""
 

@@ -14,9 +14,27 @@ Endpoints:
 from __future__ import annotations
 
 import logging
+import os
+import sys
 import uuid
-from datetime import datetime, timedelta, timezone
+from collections import defaultdict
+from datetime import date, datetime, timedelta, timezone
 from typing import Any
+
+# ---------------------------------------------------------------------------
+# Report agent — direct Python import (no HTTP boundary, same as AI pipeline).
+# ---------------------------------------------------------------------------
+_REPORT_AGENT_DIR = os.path.abspath(
+    os.path.join(os.path.dirname(__file__), "..", "..", "..", "ai_agents", "report-agent")
+)
+if _REPORT_AGENT_DIR not in sys.path:
+    sys.path.insert(0, _REPORT_AGENT_DIR)
+
+try:
+    from report_agent import generate_report as _generate_report  # type: ignore[import]
+    _REPORT_AGENT_AVAILABLE = True
+except ImportError:
+    _REPORT_AGENT_AVAILABLE = False
 
 from fastapi import APIRouter, Depends, status
 from gotrue.errors import AuthApiError  # type: ignore[import-not-found]
@@ -58,6 +76,8 @@ from app.schemas.parent import (
     DailyShortestEntry,
     DayAnalysis,
     DeleteChildRequest,
+    GenerateReportRequest,
+    GenerateReportResponse,
     ParentSettings,
     ParentSettingsUpdate,
     WeekAnalysisResponse,
@@ -820,6 +840,268 @@ async def get_child_daily_analysis(
             trick_category=shortest_entry.trick_category,
             duration=shortest_entry.duration,  # type: ignore[arg-type]
         ),
+    )
+
+
+# -----------------------------------------------------------------------------
+# POST /parent/children/{child_id}/reports/generate — AI progress report
+# -----------------------------------------------------------------------------
+
+
+@router.post(
+    "/children/{child_id}/reports/generate",
+    response_model=GenerateReportResponse,
+    summary="Generate an AI progress report for a child (parent-authed).",
+)
+async def generate_child_report(
+    child_id: str,
+    body: GenerateReportRequest,
+    current: AuthUser = Depends(get_current_user),
+) -> GenerateReportResponse:
+    """Assemble a full activity payload for the child and call the report agent.
+
+    ``period_days`` controls the look-back window (default 30, max 365).
+    The agent returns a ~280-word narrative report.  On API failure the
+    endpoint retries once then returns ``{ report: null, reason: "api_error" }``.
+
+    Returns ``503 report_agent_unavailable`` if the agent could not be imported
+    (missing ``anthropic`` or ``ANTHROPIC_API_KEY``).
+    """
+    if not _REPORT_AGENT_AVAILABLE:
+        raise APIError(
+            "Report agent is unavailable. Ensure the anthropic package is installed "
+            "and ANTHROPIC_API_KEY is set.",
+            code="report_agent_unavailable",
+            status_code=503,
+        )
+
+    _require_parent(current)
+    child_row = _require_owned_child(child_id, str(current.id))
+
+    admin = get_admin_supabase()
+    period_days = body.period_days
+    period_start = datetime.now(timezone.utc) - timedelta(days=period_days)
+
+    # ------------------------------------------------------------------
+    # Q1 — child info
+    # ------------------------------------------------------------------
+    children_res = (
+        admin.table("children")
+        .select(
+            "user_id, current_zone, current_difficulty, difficulty_ceiling, "
+            "grade, streak_current, streak_best, date_of_birth"
+        )
+        .eq("id", child_row["id"])
+        .limit(1)
+        .execute()
+    )
+    child_db = children_res.data[0]
+
+    user_res = (
+        admin.table("users")
+        .select("display_name")
+        .eq("id", child_db["user_id"])
+        .limit(1)
+        .execute()
+    )
+    display_name = user_res.data[0]["display_name"] if user_res.data else "Child"
+
+    dob_str = child_db.get("date_of_birth")
+    if dob_str:
+        dob = date.fromisoformat(dob_str)
+        today = date.today()
+        age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+    else:
+        age = 0
+
+    child_info = {
+        "name": display_name,
+        "age": age,
+        "grade": child_db["grade"],
+        "zone": child_db["current_zone"],
+        "current_difficulty": child_db["current_difficulty"],
+        "difficulty_ceiling": child_db["difficulty_ceiling"],
+        "streak_current": child_db["streak_current"],
+        "streak_best": child_db["streak_best"],
+    }
+
+    # ------------------------------------------------------------------
+    # Q2 — all problem attempts in the period
+    # ------------------------------------------------------------------
+    attempts_res = (
+        admin.table("problem_attempts")
+        .select("problem_id, solved_correctly, duration_ms, hints_used, previously_failed, difficulty, answered_at")
+        .eq("child_id", child_row["id"])
+        .gte("answered_at", period_start.isoformat())
+        .execute()
+    )
+    rows = attempts_res.data or []
+
+    # ------------------------------------------------------------------
+    # Q3 — problems for those IDs
+    # ------------------------------------------------------------------
+    problem_map: dict[str, Any] = {}
+    if rows:
+        prob_ids = list({r["problem_id"] for r in rows})
+        probs_res = (
+            admin.table("problems")
+            .select("id, stem, category")
+            .in_("id", prob_ids)
+            .execute()
+        )
+        problem_map = {p["id"]: p for p in (probs_res.data or [])}
+
+    # ------------------------------------------------------------------
+    # Q4 — trick discoveries for this child
+    # ------------------------------------------------------------------
+    disc_res = (
+        admin.table("trick_discoveries")
+        .select("trick_id, unlocked, current_phase, practice_problems_solved, practice_problems_attempted")
+        .eq("child_id", child_row["id"])
+        .execute()
+    )
+    discoveries = disc_res.data or []
+
+    # ------------------------------------------------------------------
+    # Q5 — all tricks (25 rows)
+    # ------------------------------------------------------------------
+    all_tricks_res = (
+        admin.table("tricks")
+        .select("id, name")
+        .execute()
+    )
+    all_tricks = all_tricks_res.data or []
+    tricks_name_map = {t["id"]: t["name"] for t in all_tricks}
+
+    # ------------------------------------------------------------------
+    # Aggregate: overall
+    # ------------------------------------------------------------------
+    total = len(rows)
+    correct_count = sum(1 for r in rows if r["solved_correctly"])
+    timed = [r for r in rows if r["duration_ms"] is not None]
+
+    overall = {
+        "attempts": total,
+        "accuracy": round(correct_count / total, 2) if total else 0.0,
+        "avg_seconds": round(sum(r["duration_ms"] for r in timed) / len(timed) / 1000) if timed else 0.0,
+        "avg_hints_per_problem": round(sum(r["hints_used"] for r in rows) / total, 1) if total else 0.0,
+    }
+
+    # ------------------------------------------------------------------
+    # Aggregate: by_category
+    # ------------------------------------------------------------------
+    cat_buckets: dict[str, list] = defaultdict(list)
+    for attempt in rows:
+        prob = problem_map.get(attempt["problem_id"])
+        if prob:
+            cat_buckets[prob["category"]].append(attempt)
+
+    by_category = []
+    for cat, cat_attempts in cat_buckets.items():
+        cat_timed = [a for a in cat_attempts if a["duration_ms"] is not None]
+        by_category.append({
+            "category": cat,
+            "attempts": len(cat_attempts),
+            "accuracy": round(sum(1 for a in cat_attempts if a["solved_correctly"]) / len(cat_attempts), 2),
+            "avg_seconds": round(sum(a["duration_ms"] for a in cat_timed) / len(cat_timed) / 1000) if cat_timed else 0.0,
+        })
+
+    # ------------------------------------------------------------------
+    # Aggregate: difficulty_curve
+    # ------------------------------------------------------------------
+    diff_buckets: dict[int, list] = defaultdict(list)
+    for attempt in rows:
+        if attempt["difficulty"] is not None:
+            diff_buckets[attempt["difficulty"]].append(attempt)
+
+    difficulty_curve = sorted(
+        [
+            {
+                "level": lvl,
+                "attempts": len(d),
+                "accuracy": round(sum(1 for a in d if a["solved_correctly"]) / len(d), 2),
+            }
+            for lvl, d in diff_buckets.items()
+        ],
+        key=lambda x: x["level"],
+    )
+
+    # ------------------------------------------------------------------
+    # Aggregate: tricks summary
+    # ------------------------------------------------------------------
+    unlocked_ids = [td["trick_id"] for td in discoveries if td["unlocked"]]
+    in_progress = []
+    for td in discoveries:
+        if not td["unlocked"]:
+            prac_acc = None
+            if td["practice_problems_attempted"] > 0:
+                prac_acc = round(td["practice_problems_solved"] / td["practice_problems_attempted"], 2)
+            in_progress.append({
+                "id": td["trick_id"],
+                "name": tricks_name_map.get(td["trick_id"], td["trick_id"]),
+                "phase": td["current_phase"],
+                "accuracy": prac_acc,
+            })
+
+    tricks_summary = {
+        "unlocked": unlocked_ids,
+        "in_progress": in_progress,
+        "not_yet_started": len(all_tricks) - len(discoveries),
+    }
+
+    # ------------------------------------------------------------------
+    # Aggregate: struggled_problems (up to 9, unsolved in period)
+    # ------------------------------------------------------------------
+    failed_rows = [r for r in rows if not r["solved_correctly"]]
+    failed_rows.sort(key=lambda r: (not r["previously_failed"], -(r["duration_ms"] or 0)))
+    struggled_problems = []
+    for r in failed_rows[:9]:
+        prob = problem_map.get(r["problem_id"])
+        if prob:
+            struggled_problems.append({
+                "stem": prob["stem"],
+                "category": prob["category"],
+                "difficulty": r["difficulty"] if r["difficulty"] is not None else 1,
+                "hints_used": r["hints_used"],
+                "failed_twice": r["previously_failed"],
+            })
+
+    # ------------------------------------------------------------------
+    # Aggregate: trend (first half vs second half accuracy)
+    # ------------------------------------------------------------------
+    midpoint = period_start + timedelta(days=period_days // 2)
+
+    def _half_acc(half: list[dict]) -> float:
+        if not half:
+            return 0.0
+        return sum(1 for r in half if r["solved_correctly"]) / len(half)
+
+    first_half = [r for r in rows if datetime.fromisoformat(r["answered_at"]).astimezone(timezone.utc) < midpoint]
+    second_half = [r for r in rows if datetime.fromisoformat(r["answered_at"]).astimezone(timezone.utc) >= midpoint]
+    diff = _half_acc(second_half) - _half_acc(first_half)
+    trend = "improving" if diff > 0.05 else "declining" if diff < -0.05 else "stable"
+
+    # ------------------------------------------------------------------
+    # Call the report agent (retry once on api_error per the contract)
+    # ------------------------------------------------------------------
+    payload = {
+        "child": child_info,
+        "period_days": period_days,
+        "overall": overall,
+        "by_category": by_category,
+        "difficulty_curve": difficulty_curve,
+        "tricks": tricks_summary,
+        "struggled_problems": struggled_problems,
+        "trend": trend,
+    }
+
+    result = _generate_report(payload)
+    if result.get("reason") == "api_error":
+        result = _generate_report(payload)
+
+    return GenerateReportResponse(
+        report=result.get("report"),
+        reason=result.get("reason"),
     )
 
 

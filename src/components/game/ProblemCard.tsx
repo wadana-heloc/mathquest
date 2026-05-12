@@ -694,12 +694,26 @@ export function ProblemCard({
           >
             {problem.stem}
           </p> */}
-          <h2
-            className="text-[28px] font-black text-white leading-tight tracking-tight font-[Nunito,sans-serif]"
-            aria-label={`Problem: ${problem.stem}`}
-          >
-            {problem.stem}
-          </h2>
+          {problem.stem.includes('\n') ? (
+            <>
+              <h2
+                className="text-[18px] font-black text-white leading-tight tracking-tight font-[Nunito,sans-serif] mb-2"
+                aria-label={`Problem: ${problem.stem}`}
+              >
+                {problem.stem.split('\n')[0]}
+              </h2>
+              <pre className="text-[13px] text-white font-mono leading-snug whitespace-pre overflow-x-auto text-left block w-full">
+                {problem.stem.split('\n').slice(1).join('\n')}
+              </pre>
+            </>
+          ) : (
+            <h2
+              className="text-[28px] font-black text-white leading-tight tracking-tight font-[Nunito,sans-serif]"
+              aria-label={`Problem: ${problem.stem}`}
+            >
+              {problem.stem}
+            </h2>
+          )}
         </div>
 
         {/* ── Divider ─────────────────────────────────────── */}

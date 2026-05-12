@@ -6,7 +6,7 @@
 # This module is pure Python — no DB calls, no API calls, no generator calls.
 # The backend owns data retrieval; this module owns the scoring decision.
 
-from config import (
+from mathquest_config import (
     MIN_BANK_SIZE,
     DISCOVERY_PROBLEMS_REQUIRED,
     WEIGHT_RETRY,

@@ -13,7 +13,7 @@ import os
 import re
 import anthropic
 from dotenv import load_dotenv
-from config import MODEL, MAX_TOKENS, PROMPT_CACHING_ENABLED
+from story_config import MODEL, MAX_TOKENS, PROMPT_CACHING_ENABLED
 
 load_dotenv()
 

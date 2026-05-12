@@ -8,7 +8,7 @@ import json
 from dotenv import load_dotenv
 import anthropic
 from agent_generator import _build_system_prompt, _build_user_message, _MOCK_PROBLEM_FIXTURE
-from schemas import ChildProfileInput
+from mathquest_schemas import ChildProfileInput
 
 load_dotenv()
 

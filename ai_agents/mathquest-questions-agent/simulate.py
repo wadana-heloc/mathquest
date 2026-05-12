@@ -11,7 +11,7 @@
 
 from problem_recommender import recommend
 from difficulty_adjuster import process_answer
-from config import (
+from mathquest_config import (
     DISCOVERY_PROBLEMS_REQUIRED,
     MIN_PROBLEMS_PER_LEVEL,
     MIN_PRACTICE_PROBLEMS,

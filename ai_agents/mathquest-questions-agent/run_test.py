@@ -4,7 +4,7 @@
 # Uses the real Anthropic API — make sure ANTHROPIC_API_KEY is set in .env.
 
 import json
-from schemas import ChildProfileInput
+from mathquest_schemas import ChildProfileInput
 from orchestrator import run_pipeline
 
 

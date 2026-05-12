@@ -13,7 +13,7 @@ import json
 import anthropic
 from dotenv import load_dotenv
 
-from config import (
+from mathquest_config import (
     MODEL_NAME,
     AGENT2_MAX_TOKENS,
     PROMPT_CACHING_ENABLED,

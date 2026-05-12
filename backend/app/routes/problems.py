@@ -337,7 +337,7 @@ async def _refill_problem_bank(
     """
     try:
         from orchestrator import run_pipeline  # type: ignore[import-untyped]
-        from schemas import ChildProfileInput, ChildData, SessionStats, RecentProblem  # type: ignore[import-untyped]
+        from mathquest_schemas import ChildProfileInput, ChildData, SessionStats, RecentProblem  # type: ignore[import-untyped]
 
         admin = get_admin_supabase()
 

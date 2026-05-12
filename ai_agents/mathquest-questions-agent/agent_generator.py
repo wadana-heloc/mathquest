@@ -13,13 +13,13 @@ from pathlib import Path
 import anthropic
 from dotenv import load_dotenv
 
-from config import (
+from mathquest_config import (
     MODEL_NAME,
     AGENT1_MAX_TOKENS,
     PROMPT_CACHING_ENABLED,
     RECENT_PROBLEMS_CAP,
 )
-from schemas import ChildProfileInput
+from mathquest_schemas import ChildProfileInput
 
 # Load ANTHROPIC_API_KEY and MOCK_API from the .env file at import time
 load_dotenv()

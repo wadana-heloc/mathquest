@@ -10,8 +10,8 @@ import json
 import time
 from pathlib import Path
 
-from config import MAX_RETRIES, RETRY_WAIT_SECONDS
-from schemas import ChildProfileInput, ProblemOutput, ReviewerOutput
+from mathquest_config import MAX_RETRIES, RETRY_WAIT_SECONDS
+from mathquest_schemas import ChildProfileInput, ProblemOutput, ReviewerOutput
 from difficulty_engine import compute_difficulty_target, get_eligible_tricks
 from agent_generator import generate_problem, _TRICKS_BY_ID, _MOCK_PROBLEM_FIXTURE
 from agent_reviewer import review_problem

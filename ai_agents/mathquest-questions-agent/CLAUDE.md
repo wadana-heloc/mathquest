@@ -23,8 +23,8 @@ The system uses Claude as the **orchestrator** — meaning Claude decides what c
 - `problem_recommender.py` — Scores candidate problems from the bank and picks the best fit; raises a refill flag when the bank runs low; returns the phase reveal signal when discovery is complete
 - `difficulty_adjuster.py` — Single entry point `process_answer()` called by the backend after every child answer; runs calibration, session adjustment, mastery check, and phase/trick transitions in one call
 - `simulate.py` — End-to-end simulation of four scenarios using fake in-memory state; demonstrates discovery, mastery, trick cap, and calibration; run with `python simulate.py` (no API, no DB)
-- `schemas.py` — Pydantic models for the child profile input and the problem output JSON
-- `config.py` — All hardcoded settings: model name, max tokens, retry wait time, difficulty thresholds, fallback settings
+- `mathquest_schemas.py` — Pydantic models for the child profile input and the problem output JSON
+- `mathquest_config.py` — All hardcoded settings: model name, max tokens, retry wait time, difficulty thresholds, fallback settings
 - `tricks/` — Folder containing the 25 tricks reference document and hints rules document
 - `fallback_problems/` — Pre-made validated problems per (trick_id, difficulty, age_group) used when agents fail
 - `test_agents.py` — Unit tests for all functions; run with `pytest test_agents.py -v`
@@ -168,6 +168,7 @@ Tricks are referenced by code (e.g. `A1`, `B3`, `D5`) across 4 categories:
 The full descriptions for all 25 tricks are in `tricks/tricks_reference.json`. Each entry has four fields: `trick_id`, `name`, `category`, `category_name`, `description`. The `discovery_pathway` and `example` fields were intentionally omitted — the description is self-contained. Agent 1 receives only the eligible subset (not all 25) as context when generating problems.
 
 ## Project-Specific Patterns
+- **All module filenames are agent-prefixed** — every `.py` file in this agent uses the `mathquest_` prefix (e.g. `mathquest_config.py`, `mathquest_schemas.py`). The other agents follow the same convention (`report_config.py`, `story_config.py`). This prevents Python `sys.modules` collisions when multiple agent directories are on `sys.path` simultaneously. Any new module added here must follow this rule.
 - **Child profile is always pre-fetched by the backend** — agents never connect to the DB directly
 - **Difficulty and trick selection are always computed by `difficulty_engine.py`** — never delegated to an LLM, never moved to the backend
 - **All trick references use A1–D5 codes** — never use integer IDs for tricks
@@ -176,7 +177,7 @@ The full descriptions for all 25 tricks are in `tricks/tricks_reference.json`. E
 - **Agent outputs are always validated with Pydantic** before being used or passed between agents
 - **Agent results are always converted with `json.dumps()`** before being sent back into a message
 - **API keys are always read with `os.getenv()`** — never hardcoded
-- **All literals** (model name, thresholds, timeouts, difficulty bounds) live in `config.py` and are imported from there — never hardcoded in agent files
+- **All literals** (model name, thresholds, timeouts, difficulty bounds) live in `mathquest_config.py` and are imported from there — never hardcoded in agent files
 - **Fallback is always available** — if both agents fail or return invalid JSON, serve a pre-made problem from `fallback_problems/`
 - **Always strip markdown fences before parsing agent responses** — Claude sometimes wraps JSON in ` ```json ``` ` blocks even when the system prompt says not to. Both `agent_generator.py` and `agent_reviewer.py` strip fences with `if raw_text.startswith("```"): raw_text = raw_text.split("\n", 1)[-1].rsplit("```", 1)[0].strip()` before calling `json.loads()`
 
@@ -204,13 +205,14 @@ Every file must follow this commenting structure:
 - The difficulty engine must have especially thorough tests — it controls a child's learning progression
 
 ## Constraints — What NOT To Do
+- **Do not give any module a generic name** (e.g. `config.py`, `schemas.py`, `constants.py`) — always prefix with the agent name (e.g. `mathquest_config.py`, `mathquest_schemas.py`). When multiple agent directories share `sys.path`, Python's module cache (`sys.modules`) means the first module with a given name wins and silently shadows every other agent's module with the same name. This caused a production incident where `report-agent/config.py` was cached as `sys.modules["config"]` before `problem_recommender.py` loaded, causing `from config import MIN_BANK_SIZE` to raise `ImportError` and setting `_AI_AVAILABLE = False`. Every new file added to this agent must have a name unique across the whole `ai_agents/` tree.
 - Do not rewrite working code from scratch — prefer targeted edits
 - Do not add new libraries without explaining why they are needed
 - Do not make the code clever at the expense of readability — this is a learning project
 - Do not delegate difficulty or trick selection to an LLM — this always belongs in `difficulty_engine.py` as deterministic Python
 - Do not move `difficulty_engine.py` to the backend — the AI pipeline owns difficulty logic so it can be tuned and tested independently
 - Do not let agents connect to the DB — the backend always pre-fetches and passes the profile
-- Do not hardcode model names, thresholds, or any literals outside `config.py`
+- Do not hardcode model names, thresholds, or any literals outside `mathquest_config.py`
 - Do not skip Pydantic validation between agents — it prevents bad data from reaching children
 - Do not use integer IDs for tricks — always use A1–D5 codes
 - Do not use seconds for time fields — always use milliseconds to match the DB schema
@@ -233,8 +235,8 @@ Every API call costs tokens. These rules keep costs low without sacrificing qual
 - Always slice `recent_problems` to the last **5 problems maximum** before sending to Agent 1. Older history does not improve generation quality and wastes tokens.
 
 **Set tight `max_tokens` per agent:**
-- Agent 1 response is a single JSON object — set `max_tokens` to `600` in `config.py`
-- Agent 2 response is a small approval JSON — set `max_tokens` to `300` in `config.py`
+- Agent 1 response is a single JSON object — set `max_tokens` to `600` in `mathquest_config.py`
+- Agent 2 response is a small approval JSON — set `max_tokens` to `300` in `mathquest_config.py`
 - Never use a high default like 4096 for structured JSON responses
 
 **Skip Agent 2 if Pydantic validation fails:**
@@ -243,7 +245,7 @@ Every API call costs tokens. These rules keep costs low without sacrificing qual
 **Use prompt caching for the system prompts:**
 - The Generator system prompt (which includes the tricks reference and output schema) is large and identical across all calls. Use Anthropic's prompt caching (`"cache_control": {"type": "ephemeral"}`) on the system prompt to avoid re-charging input tokens on repeated calls within the cache window (5 minutes).
 - The Reviewer system prompt is also static — cache it the same way.
-- Prompt caching is configured in `config.py` as a flag so it can be toggled off during development.
+- Prompt caching is configured in `mathquest_config.py` as a flag so it can be toggled off during development.
 
 **During development, use a mock mode:**
 - Add a `MOCK_API=true` flag in `.env`. When set, `agent_generator.py` and `agent_reviewer.py` return hardcoded fixture responses instead of calling the API. Use this for all testing that doesn't specifically need to validate LLM output quality — it saves real tokens and runs instantly.
@@ -257,8 +259,8 @@ All core modules are complete.
 
 **Completed:**
 - `tricks/tricks_reference.json` — all 25 tricks, fields: `trick_id`, `name`, `category`, `category_name`, `description`
-- `schemas.py` — 7 Pydantic models: `SessionStats`, `ChildData`, `RecentProblem` (includes `difficulty: int`), `ChildProfileInput`, `Hint`, `ProblemOutput`, `ReviewerOutput`
-- `config.py` — all constants: model name, token limits, retry settings, difficulty bounds, session thresholds, calibration constants (`CALIBRATION_DELTA=2`, `CALIBRATION_SLOW_DELTA=1`, `CALIBRATION_DROP=1`), bank/recommender settings, scoring weights
+- `mathquest_schemas.py` — 7 Pydantic models: `SessionStats`, `ChildData`, `RecentProblem` (includes `difficulty: int`), `ChildProfileInput`, `Hint`, `ProblemOutput`, `ReviewerOutput`
+- `mathquest_config.py` — all constants: model name, token limits, retry settings, difficulty bounds, session thresholds, calibration constants (`CALIBRATION_DELTA=2`, `CALIBRATION_SLOW_DELTA=1`, `CALIBRATION_DROP=1`), bank/recommender settings, scoring weights
 - `difficulty_engine.py` — 4 functions: `compute_trick_mastery`, `compute_session_adjustment`, `get_eligible_tricks` (prerequisite-gated, struggling-first ordering), `compute_difficulty_target` (volume-gated advancement); plus `TRICK_SEQUENCE` and `PREREQUISITES` constants
 - `agent_generator.py` — Agent 1: builds system prompt with caching, filters eligible tricks, calls Claude, strips markdown fences from response, returns problem dict or None
 - `agent_reviewer.py` — Agent 2: validates problem math, trick alignment, hints, schema, and age-appropriateness; strips markdown fences from response; returns ReviewerOutput dict or None

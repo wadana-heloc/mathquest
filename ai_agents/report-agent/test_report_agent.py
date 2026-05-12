@@ -16,7 +16,7 @@ from report_agent import (
     _build_user_message,
     generate_report,
 )
-from schemas import (
+from report_schemas import (
     ReportPayload,
     ChildInfo,
     OverallStats,
@@ -27,7 +27,7 @@ from schemas import (
     StruggledProblem,
 )
 from constants import ALL_TRICKS, BASE_SYSTEM_PROMPT
-from config import PROMPT_CACHING_ENABLED
+from report_config import PROMPT_CACHING_ENABLED
 
 
 # ---------------------------------------------------------------------------

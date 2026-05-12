@@ -11,9 +11,9 @@ import json
 import anthropic
 from dotenv import load_dotenv
 
-from config import MODEL_NAME, MAX_TOKENS, PROMPT_CACHING_ENABLED
+from report_config import MODEL_NAME, MAX_TOKENS, PROMPT_CACHING_ENABLED
 from constants import ALL_TRICKS, BASE_SYSTEM_PROMPT
-from schemas import ReportPayload
+from report_schemas import ReportPayload
 
 # Load ANTHROPIC_API_KEY and MOCK_API from the .env file at import time
 load_dotenv()

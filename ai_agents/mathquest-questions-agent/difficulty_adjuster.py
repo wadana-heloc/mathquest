@@ -6,7 +6,7 @@
 # This module is pure deterministic Python — no DB calls, no API calls.
 # Difficulty logic is reused from difficulty_engine.py (never duplicated).
 
-from config import (
+from mathquest_config import (
     DIFFICULTY_MIN,
     DIFFICULTY_MAX,
     CALIBRATION_DELTA,
@@ -20,7 +20,7 @@ from config import (
     MAX_PROBLEMS_PER_TRICK,
 )
 from difficulty_engine import compute_session_adjustment, TRICK_SEQUENCE, PREREQUISITES
-from schemas import SessionStats, RecentProblem
+from mathquest_schemas import SessionStats, RecentProblem
 
 
 def compute_difficulty_adjustment(

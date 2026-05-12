@@ -17,8 +17,8 @@ from difficulty_engine import (
     TRICK_SEQUENCE,
     PREREQUISITES,
 )
-from schemas import ChildData, SessionStats, RecentProblem, ChildProfileInput
-from config import (
+from mathquest_schemas import ChildData, SessionStats, RecentProblem, ChildProfileInput
+from mathquest_config import (
     DIFFICULTY_MIN,
     DIFFICULTY_MAX,
     CALIBRATION_DELTA,
@@ -1050,7 +1050,7 @@ class TestRunPipeline:
 
     def test_retries_before_fallback(self):
         # generate_problem should be called MAX_RETRIES + 1 times before fallback
-        from config import MAX_RETRIES
+        from mathquest_config import MAX_RETRIES
         with patch("orchestrator.generate_problem", return_value=None) as mock_gen:
             with patch("orchestrator.time.sleep"):
                 run_pipeline(make_child_profile_input())
@@ -1058,7 +1058,7 @@ class TestRunPipeline:
 
     def test_sleep_called_between_retries(self):
         # time.sleep must be called between attempts (not before the first)
-        from config import MAX_RETRIES
+        from mathquest_config import MAX_RETRIES
         with patch("orchestrator.generate_problem", return_value=None):
             with patch("orchestrator.time.sleep") as mock_sleep:
                 run_pipeline(make_child_profile_input())

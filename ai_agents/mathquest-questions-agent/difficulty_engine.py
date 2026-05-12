@@ -7,7 +7,7 @@
 #   - difficulty_target (int) passed to Agent 1
 #   - eligible_tricks (list[str]) passed to Agent 1
 
-from config import (
+from mathquest_config import (
     DIFFICULTY_MIN,
     DIFFICULTY_MAX,
     ADVANCEMENT_CORRECT_RATE,
@@ -18,7 +18,7 @@ from config import (
     ADVANCE_DURATION_THRESHOLD_MS,
     MIN_PROBLEMS_PER_LEVEL,
 )
-from schemas import ChildData, SessionStats, RecentProblem
+from mathquest_schemas import ChildData, SessionStats, RecentProblem
 from typing import List
 
 

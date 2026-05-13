@@ -265,7 +265,7 @@ async def submit_wish(
 @child_router.get(
     "/wishes",
     response_model=ChildWishlistResponse,
-    summary="Return the child's active wishlist (rejected wishes excluded) and coin balance.",
+    summary="Return the child's full wishlist (including rejected wishes) and coin balance.",
 )
 async def get_wishlist(
     current: AuthUser = Depends(get_current_user),
@@ -281,7 +281,6 @@ async def get_wishlist(
             "ai_reasoning, parent_note, created_at, redeemed_at, delivered_at"
         )
         .eq("child_id", child_row["id"])
-        .neq("status", "rejected")
         .order("created_at", desc=True)
         .execute()
     )

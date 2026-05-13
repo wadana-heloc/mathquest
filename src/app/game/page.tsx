@@ -268,6 +268,7 @@ import { StoryButton, getLastReadStoryId } from "@/components/game/StoryModal";
 import { fetchLatestStory } from "@/lib/child/actions";
 import { AudioControls, loadAudioSettings, AUDIO_EVENT, type AudioSettings } from "@/components/game/AudioControlModal";
 import { TricksButton } from "@/components/game/TricksModal";
+import { WishlistCard } from "@/components/game/WishlistCard";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -948,6 +949,9 @@ export default function GamePage() {
                 {" "}to save coins, stars & progress
               </p>
             )}
+
+            {/* Wishlist */}
+            {user && <WishlistCard />}
 
           </div>
           {/* end right column */}

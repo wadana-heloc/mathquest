@@ -6,6 +6,7 @@ import { addChild, deleteChild, resetZone, resetCoins, resetTricks, generateStor
 import AddChildModal from "@/components/parent/AddChildModal";
 import { GameSpinner, Skeleton, StatCardSkeleton, ConceptBarSkeleton, ProblemRowSkeleton, TrickCardSkeleton, ReportSectionSkeleton } from "@/components/parent/GameLoader";
 import type { AddChildForm } from "@/types/parent";
+import { RewardsTab } from "@/components/parent/RewardsTab";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface Child {
@@ -111,11 +112,12 @@ const DUMMY_REPORT_SECTIONS: ReportSection[] = [
 ]
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
-type Tab = "overview" | "analytics" | "report" | "settings" | "content" | "reset";
+type Tab = "overview" | "analytics" | "rewards" | "report" | "settings" | "content" | "reset";
 
 const TABS: { id: Tab; label: string; emoji: string }[] = [
   { id: "overview",  label: "Overview",  emoji: "🏠" },
   { id: "analytics", label: "Analytics", emoji: "📊" },
+  { id: "rewards",   label: "Rewards",   emoji: "🎁" },
   { id: "report",    label: "Report",    emoji: "📋" },
   { id: "settings",  label: "Settings",  emoji: "⚙️" },
   { id: "content",   label: "Stories",   emoji: "📖" },
@@ -1815,6 +1817,7 @@ export default function ParentDashboardClient({ parentName, parentEmail, dbChild
   const [isDeleting, setIsDeleting] = useState(false);
   const [isPending, startTransition] = useTransition();
   const [childReports, setChildReports] = useState<Record<string, ChildReport>>({});
+  const [rewardsPendingCount, setRewardsPendingCount] = useState(0);
 
   const child = children.find(c => c.id === selectedId) ?? null;
   const pending = 0;
@@ -1930,6 +1933,9 @@ export default function ParentDashboardClient({ parentName, parentEmail, dbChild
               {t.id === "content" && pending > 0 && (
                 <span className="ml-auto w-4 h-4 rounded-full bg-coral text-white text-[9px] font-bold flex items-center justify-center">{pending}</span>
               )}
+              {t.id === "rewards" && rewardsPendingCount > 0 && (
+                <span className="ml-auto min-w-[1rem] h-4 px-1 rounded-full bg-coral text-white text-[9px] font-bold flex items-center justify-center">{rewardsPendingCount}</span>
+              )}
             </button>
           ))}
         </div>
@@ -2042,6 +2048,13 @@ export default function ParentDashboardClient({ parentName, parentEmail, dbChild
               <div className="pb-6">
                 {tab === "overview"  && <OverviewTab child={child} />}
                 {tab === "analytics" && <AnalyticsTab child={child} />}
+                {tab === "rewards"   && (
+                  <RewardsTab
+                    onPendingCountChange={setRewardsPendingCount}
+                    children={children.map(c => ({ id: c.game_id, name: c.name }))}
+                    defaultChildId={child?.game_id}
+                  />
+                )}
                 {tab === "report"    && (
                   <ReportTab
                     childName={child.name}

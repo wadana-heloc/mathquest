@@ -24,6 +24,9 @@ and applied to the Supabase-hosted Postgres instance.
 - [The `sessions` table](#the-sessions-table)
 - [The `trick_discoveries` table](#the-trick_discoveries-table)
 - [The `problem_attempts` table](#the-problem_attempts-table)
+- [The `stories` table](#the-stories-table)
+- [The `wish_items` table](#the-wish_items-table)
+- [The `coin_transactions` table](#the-coin_transactions-table)
 - [Parent deletion cascade](#parent-deletion-cascade)
 - [Row-Level Security (RLS)](#row-level-security-rls)
   - [Threat model](#threat-model)
@@ -61,7 +64,13 @@ supabase/
     ├── 0015_extend_trick_discoveries_phase_tracking.sql
     ├── 0016_create_problem_attempts.sql
     ├── 0017_add_difficulty_to_problem_attempts.sql
-    └── 0018_add_missing_tricks.sql
+    ├── 0018_add_missing_tricks.sql
+    ├── 0019_update_problems_category_check.sql
+    ├── 0020_remove_problems_category_check.sql
+    ├── 0021_create_stories.sql
+    ├── 0022_grant_stories_service_role.sql
+    ├── 0023_create_wish_tables.sql
+    └── 0024_create_redeem_wish_rpc.sql
 ```
 
 ---
@@ -415,6 +424,92 @@ Index: `(child_id, difficulty, answered_at DESC)` — supports the recent-perfor
 
 ---
 
+## The `stories` table
+
+Source: [`migrations/0021_create_stories.sql`](migrations/0021_create_stories.sql).
+Service-role grant patch: [`migrations/0022_grant_stories_service_role.sql`](migrations/0022_grant_stories_service_role.sql).
+
+Stores AI-generated adventure stories for a child. Each row is one approved story (chapters + word count). The parent previews a generated story first, then explicitly saves it; only saved stories land here. Stories are child-specific — no `parent_id` column (derivable via `child_id → children → users.parent_id`).
+
+| Column       | Type          | Notes                                                                 |
+| ------------ | ------------- | --------------------------------------------------------------------- |
+| `id`         | `uuid` PK     | `gen_random_uuid()`.                                                  |
+| `child_id`   | `uuid` FK     | → `public.children.id`. Cascade-deletes with the child.               |
+| `chapters`   | `jsonb`       | Array of chapter objects `[{title, content}]` from the story agent.   |
+| `word_count` | `integer`     | Nullable. Total word count across all chapters; supplied by the caller. |
+| `created_at` | `timestamptz` | `now()`.                                                              |
+
+Index: `(child_id, created_at DESC)` — supports `GET /child/stories/latest` (latest story per child).
+
+**RLS:** RLS is enabled. No explicit policies for `authenticated` — all reads and writes go through `service_role`. `service_role` has SELECT, INSERT, UPDATE, DELETE (granted in migration 0021; patched by 0022 for already-applied databases). The `GET /child/stories/latest` endpoint verifies the child owns the requested stories before returning them.
+
+---
+
+## The `wish_items` table
+
+Source: [`migrations/0023_create_wish_tables.sql`](migrations/0023_create_wish_tables.sql).
+
+Stores wish requests submitted by a child. Each row goes through a parent-approval lifecycle before a child can redeem it with coins.
+
+| Column              | Type          | Notes                                                                               |
+| ------------------- | ------------- | ----------------------------------------------------------------------------------- |
+| `id`                | `uuid` PK     | `gen_random_uuid()`.                                                                |
+| `child_id`          | `uuid` FK     | → `public.children.id`. Cascade-deletes with the child.                             |
+| `title`             | `text`        | Child's wish description. CHECK length 1..120.                                      |
+| `ai_suggested_cost` | `integer`     | Nullable. Coin cost proposed by the pricing agent. Written by the background task.  |
+| `final_cost`        | `integer`     | Nullable. Cost used for redemption. Initially equals `ai_suggested_cost`; parent can override via PATCH. |
+| `ai_category`       | `text`        | Nullable. Category from the pricing agent: `screen_time \| food \| toy \| experience \| other`. |
+| `ai_reasoning`      | `text`        | Nullable. One-sentence rationale from the pricing agent.                            |
+| `status`            | `text`        | CHECK `IN ('pending_approval', 'approved', 'rejected', 'redeemed', 'delivered')`. Default `'pending_approval'`. |
+| `parent_note`       | `text`        | Nullable. Optional note the parent adds when reviewing.                             |
+| `created_at`        | `timestamptz` | `now()`.                                                                            |
+| `reviewed_at`       | `timestamptz` | Nullable. Set when parent approves or rejects.                                      |
+| `redeemed_at`       | `timestamptz` | Nullable. Set by the `redeem_wish` RPC when the child spends coins.                 |
+| `delivered_at`      | `timestamptz` | Nullable. Set when parent marks the wish as delivered.                              |
+
+**Status state machine:**
+
+```
+  [child submits]
+        │
+        ▼
+  pending_approval  ──(parent rejects)──►  rejected
+        │
+  (parent approves)
+        │
+        ▼
+     approved  ──(child redeems via RPC)──►  redeemed  ──(parent delivers)──►  delivered
+```
+
+`final_cost` is `null` while the pricing agent background task is still running. The child sees `coins_needed: null` in the API response until pricing completes (typically < 2 s).
+
+**Pricing agent.** Immediately after a wish is inserted, the backend schedules a `BackgroundTask` that calls `price_wish(PriceRequest(...))` from `ai_agents/wishlist-agent/wishlist_agent.py`. The result is written back via an UPDATE that guards against double-write (`.is_("ai_suggested_cost", "null")` filter). If the agent is unavailable, `final_cost` defaults to 500 coins.
+
+**RLS:** RLS enabled. No explicit policies for `authenticated` — all reads and writes go through `service_role`. `service_role` has full access.
+
+---
+
+## The `coin_transactions` table
+
+Source: [`migrations/0023_create_wish_tables.sql`](migrations/0023_create_wish_tables.sql).
+
+Immutable ledger of coin movements. Each row records one credit or debit; rows are never updated or deleted. Currently only wish redemptions are ledgered here; direct coin awards from problem-solving are **not** yet written (tracked in `children.coins` and `children.daily_coins_earned` but not individually recorded).
+
+| Column         | Type          | Notes                                                                          |
+| -------------- | ------------- | ------------------------------------------------------------------------------ |
+| `id`           | `uuid` PK     | `gen_random_uuid()`.                                                           |
+| `child_id`     | `uuid` FK     | → `public.children.id`. Cascade-deletes with the child.                        |
+| `amount`       | `integer`     | Positive = credit, negative = debit. Wish redemptions write a negative amount. |
+| `reason`       | `text`        | Free-text label. Currently always `'wish_redemption'`.                         |
+| `wish_item_id` | `uuid` FK     | Nullable → `public.wish_items.id`. Present for wish-related transactions; null for future coin awards. |
+| `created_at`   | `timestamptz` | `now()`. **Never update this column.**                                         |
+
+Rows are inserted by the `redeem_wish` Postgres function (migration 0024) inside the same transaction as the coin deduction and status update — so a crash between those steps is impossible.
+
+**RLS:** RLS enabled. No explicit policies for `authenticated` — all reads and writes go through `service_role`. `service_role` has full access.
+
+---
+
 ## Parent deletion cascade
 
 Source: [`migrations/0006_parent_deletion_cascade.sql`](migrations/0006_parent_deletion_cascade.sql).
@@ -524,6 +619,8 @@ and writes via `service_role`.
 | `problem_attempts` | SELECT | `problem_attempts_select_own` | A child reads their own attempt rows (same join pattern). |
 
 INSERT / UPDATE / DELETE on all five tables: `service_role` only — no policy for authenticated means deny.
+
+`public.stories`, `public.wish_items`, and `public.coin_transactions` have RLS enabled with no `authenticated` policies — all access (read and write) goes through `service_role`. The API layer enforces ownership checks (e.g. verifying `child_id` belongs to the authenticated user) before any query runs.
 
 ### How to test RLS
 

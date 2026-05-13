@@ -114,6 +114,14 @@ class TrickNotFound(APIError):
     code = "trick_not_found"
 
 
+# --- Wishes ------------------------------------------------------------------
+
+
+class WishNotFound(APIError):
+    status_code = status.HTTP_404_NOT_FOUND
+    code = "wish_not_found"
+
+
 # --- Parent / child management -----------------------------------------------
 
 

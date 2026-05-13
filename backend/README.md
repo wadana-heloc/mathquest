@@ -91,6 +91,8 @@ cp .env.example .env
 #    - supabase/migrations/0020_remove_problems_category_check.sql
 #    - supabase/migrations/0021_create_stories.sql
 #    - supabase/migrations/0022_grant_stories_service_role.sql
+#    - supabase/migrations/0023_create_wish_tables.sql
+#    - supabase/migrations/0024_create_redeem_wish_rpc.sql
 
 # 5. Run
 uvicorn app.main:app --reload --port 8000
@@ -147,6 +149,10 @@ from `public.users` on every call (TDD §9.1) — a child's token gets a
 | `DELETE /parent/children/{child_id}`             | parent | Permanently delete the child account. Body: `{ "confirm": true }` required — returns `422 delete_not_confirmed` otherwise. Cascades through auth.users → public.users → public.children. Returns 204. **Irreversible.** |
 | `GET   /parent/settings`  | parent       | Read the parent's `public.parent_settings` row (auto-created at signup). |
 | `PATCH /parent/settings`  | parent       | Partial-update settings. Server-managed counters (`stars_earned`, `stars_redeemed`, `last_notified_at`) are **not** writable here. |
+| `GET   /parent/children/{child_id}/wishes` | parent | All wishes for one child. Optional `?status` filter. Returns `{ child_id, coins, wishes: [WishItem] }`. `404 child_not_found` if child missing or belongs to another parent. |
+| `GET   /parent/wishes`                   | parent | All wishes across the parent's children. Optional query params: `child_id`, `status`. Returns `{ pending_count, wishes: [...] }`. `pending_count` always counts pending_approval + redeemed regardless of filters. Ordered: pending_approval → redeemed → rest (newest first within each group). |
+| `PATCH /parent/wishes/{wish_id}/review`  | parent | Approve or reject a pending wish. Body: `{ "action": "approve"\|"reject", "final_cost": int (required on approve), "parent_note": str (optional) }`. |
+| `PATCH /parent/wishes/{wish_id}/deliver` | parent | Mark a redeemed wish as delivered. No body. |
 
 Error shape follows TDD §10.1 exactly: `{ "error", "code", "status" }`.
 Known codes are in [app/errors.py](app/errors.py).
@@ -165,6 +171,9 @@ All `/child/*` endpoints require a **child** bearer token. A parent token gets `
 | `GET /child/tricks`        | child | Return all tricks the child has unlocked (`unlocked=true` in `trick_discoveries`). Response: `{ unlocked_tricks: [{ trick_id, name, category, description, insight_count, unlocked_at }] }`. Empty list if none unlocked yet. |
 | `GET /child/stats/summary` | child | Powers the stats panel. Returns `{ lifetime, today, this_week }`. `lifetime`: all-time totals, fastest solve ms + stem, tricks unlocked, total insights. `today`: UTC-day progress vs hardcoded goal of 5. `this_week`: Mon–Sun UTC totals + days active. `correct` = first-try (`solved_correctly=true AND previously_failed=false`). `fastest_solve_ms`/`fastest_today_ms` are `null` if no timed correct solves. |
 | `GET /child/stories/latest` | child | Returns the most recent approved story for the child (`{ id, child_id, chapters, word_count, created_at }`), or `null` (200) if no story has been saved yet. |
+| `POST /child/wishes`                  | child | Submit a new wish. Body: `{ "title": str (max 120) }`. Inserts into `public.wish_items` (status=pending_approval) and fires AI pricing in background. Returns `{ id, title, status, ai_suggested_cost: null }` immediately (201). |
+| `GET  /child/wishes`                  | child | Returns `{ coins, wishes: [...] }`. Excludes rejected wishes. `coins_needed` is server-computed; null when `final_cost` is null. |
+| `POST /child/wishes/{wish_id}/redeem` | child | Atomically deduct coins and mark wish redeemed via `redeem_wish()` Postgres RPC. Returns `{ new_balance, wish: { id, status } }`. Errors: `wish_not_found` 404, `invalid_wish_status` 400, `insufficient_coins` 400. |
 
 ## /problems endpoints
 

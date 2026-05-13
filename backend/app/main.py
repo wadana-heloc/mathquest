@@ -23,6 +23,7 @@ from app.routes import child as child_routes
 from app.routes import parent as parent_routes
 from app.routes import problems as problems_routes
 from app.routes import tricks as tricks_routes
+from app.routes import wishes as wishes_routes
 from app.settings import get_settings
 
 
@@ -67,6 +68,8 @@ def create_app() -> FastAPI:
     app.include_router(parent_routes.router)
     app.include_router(problems_routes.router)
     app.include_router(tricks_routes.router)
+    app.include_router(wishes_routes.child_router)
+    app.include_router(wishes_routes.parent_router)
 
     @app.get("/healthz", tags=["meta"])
     async def healthz() -> dict[str, str]:

@@ -124,6 +124,23 @@ const config: Config = {
           '0%':   { opacity: '0', transform: 'translateY(-6px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
+        // New story announcement — flexbox centers X, keyframes only handle Y/scale/rotate
+        "story-appear": {
+          "0%":   { opacity: "0", transform: "translateY(-16px) scale(0.15) rotate(-12deg)" },
+          "55%":  { opacity: "1", transform: "translateY(0)     scale(1.14) rotate(4deg)" },
+          "75%":  {               transform: "translateY(0)     scale(0.94) rotate(-2deg)" },
+          "100%": { opacity: "1", transform: "translateY(0)     scale(1)    rotate(0deg)" },
+        },
+        "story-idle": {
+          "0%, 100%": { transform: "translateY(0)    scale(1)    rotate(0deg)" },
+          "25%":       { transform: "translateY(8px) scale(1.1)  rotate(-5deg)" },
+          "50%":       { transform: "translateY(0)   scale(1.05) rotate(3deg)" },
+          "75%":       { transform: "translateY(8px) scale(1.1)  rotate(-3deg)" },
+        },
+        "story-fly": {
+          "0%":   { opacity: "1", transform: "translateY(0) translateX(0) scale(1)" },
+          "100%": { opacity: "0", transform: "translateY(0) translateX(calc(50vw - 4rem)) scale(0.05)" },
+        },
       },
       animation: {
         // Auth
@@ -144,9 +161,13 @@ const config: Config = {
         "spin-slow":     "spin-slow 20s linear infinite",
         "fade-slide-up": "fade-slide-up 0.5s ease-out both",
         // Game components
-       shake:         'shake 0.45s ease',
+        shake:         'shake 0.45s ease',
         shine:         'shine 2.5s ease infinite',
         fadeSlideDown: 'fadeSlideDown 0.3s ease',
+        // New story announcement
+        "story-appear": "story-appear 0.75s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards",
+        "story-idle":   "story-idle 0.95s ease-in-out infinite",
+        "story-fly":    "story-fly 0.8s cubic-bezier(0.55, 0, 1, 0.45) forwards",
       },
     },
   },

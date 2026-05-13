@@ -255,7 +255,7 @@
  *   ✅ Semantic, bookmarkable, server-readable, zero extra deps
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useUser } from "@/lib/hooks/useUser";
 import { useChildProfile } from "@/lib/hooks/useChildProfile";
@@ -264,7 +264,8 @@ import { QuestStatsPanel } from "@/components/game/QuestStatsPanel";
 import MathParticles from "@/components/phaser/MathParticles";
 import { LogoutButton } from "@/components/game/LogoutModal";
 import { SettingsButton } from "@/components/game/SettingsModal";
-import { StoryButton } from "@/components/game/StoryModal";
+import { StoryButton, getLastReadStoryId } from "@/components/game/StoryModal";
+import { fetchLatestStory } from "@/lib/child/actions";
 import { AudioControls, loadAudioSettings, AUDIO_EVENT, type AudioSettings } from "@/components/game/AudioControlModal";
 import { TricksButton } from "@/components/game/TricksModal";
 
@@ -442,122 +443,6 @@ function DifficultyStars({ count, colorClass }: { count: number; colorClass: str
   );
 }
 
-// ─── Zone card ────────────────────────────────────────────────────────────────
-
-function ZoneCard({
-  zone,
-  isUnlocked,
-  isActive,
-  isCurrent,
-  onSelect,
-  disabled,
-  animDelay,
-}: {
-  zone: ZoneInfo;
-  isUnlocked: boolean;
-  isActive: boolean;
-  isCurrent: boolean;
-  onSelect: () => void;
-  disabled: boolean;
-  animDelay: string;
-}) {
-  const isClickable = isUnlocked && !disabled;
-
-  return (
-    <button
-    
-      onClick={onSelect}
-      disabled={!isClickable}
-      // aria-pressed={isActive}
-      aria-current={isActive ? "page" : undefined}
-      aria-label={`Zone ${zone.id}: ${zone.name}. ${zone.tagline}.${!isUnlocked ? " Locked." : ""}`}
-      style={{ animationDelay: animDelay }}
-      className={[
-        // Layout
-        "group relative flex flex-col items-center gap-2 text-center",
-        "rounded-xl border-2 p-4 md:p-5",
-        // Entrance animation
-        "animate-fade-slide-up opacity-0 [animation-fill-mode:forwards]",
-        // Interaction
-        "transition-all duration-200",
-        // State: active
-        isActive ? `${zone.activeBorder} ${zone.activeBg} ${zone.activeGlow}` : "border-slate-200 bg-white",
-        // Hover (only when clickable)
-        isClickable && !isActive ? "hover:border-indigo-300 hover:bg-indigo-50 hover:-translate-y-1.5 hover:shadow-[0_12px_32px_rgba(99,102,241,0.12)]" : "",
-        isClickable && isActive ? "hover:-translate-y-1.5" : "",
-        isClickable ? "active:scale-95 cursor-pointer" : "",
-        // Locked state
-        !isClickable ? "opacity-35 cursor-not-allowed grayscale-[60%]" : "",
-      ].filter(Boolean).join(" ")}
-    >
-      {/* "Current zone" ribbon */}
-      {isCurrent && (
-        <span className="absolute -top-3.5 left-1/2 -translate-x-1/2 bg-gold text-primary text-[9px] font-black uppercase tracking-wider px-3 py-0.5 rounded-full whitespace-nowrap shadow-lg">
-          ⚡ Current
-        </span>
-      )}
-
-      {/* Active checkmark */}
-      {isActive && (
-        <span
-          aria-hidden="true"
-          className={`absolute top-2.5 right-2.5 w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black text-white ${zone.activeBg.replace("/10", "").replace("bg-", "bg-")
-            } border ${zone.activeBorder}`}
-        >
-          ✓
-        </span>
-      )}
-
-      {/* Lock overlay */}
-      {!isUnlocked && (
-        <span className="absolute inset-0 flex items-center justify-center text-3xl" aria-hidden="true">
-          🔒
-        </span>
-      )}
-
-      {/* Zone emoji — bigger on tablet */}
-      <span
-        className={`text-3xl md:text-4xl leading-none transition-transform duration-200 ${isClickable ? "group-hover:scale-110" : ""} ${!isUnlocked ? "opacity-0" : ""}`}
-        aria-hidden="true"
-      >
-        {zone.emoji}
-      </span>
-
-      {/* Zone number */}
-      <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400 font-body">
-        Zone {zone.id}
-      </span>
-
-      {/* Zone name */}
-      <span className={`font-display font-black text-sm md:text-base leading-tight ${isActive ? zone.activeText : "text-slate-700"}`}>
-        {zone.name}
-      </span>
-
-      {/* Tagline */}
-      <span className="text-[11px] md:text-xs text-slate-400 font-body leading-tight">
-        {zone.tagline}
-      </span>
-
-      {/* Stars + difficulty label */}
-      {isUnlocked && (
-        <div className="flex flex-col items-center gap-1 mt-1">
-          <DifficultyStars count={zone.difficultyStars} colorClass={zone.activeText} />
-          <span className={`text-[10px] font-bold uppercase tracking-wide px-2.5 py-0.5 rounded-full border ${zone.badgeBg}`}>
-            {zone.difficulty}
-          </span>
-        </div>
-      )}
-
-      {/* Boss teaser — visible on tablet+ when active */}
-      {isUnlocked && isActive && (
-        <span className="hidden md:block text-[10px] text-slate-400 font-body mt-1 italic">
-          Boss: {zone.boss}
-        </span>
-      )}
-    </button>
-  );
-}
-
 // ─── Floating particle (stable positions — no hydration mismatch) ─────────────
 
 const PARTICLES = [
@@ -571,6 +456,75 @@ const PARTICLES = [
   { w: 5, top: "66%", left: "88%", dur: "6s", del: "2.8s" },
   { w: 3, top: "35%", left: "1%", dur: "9s", del: ".5s" },
 ];
+
+// ─── New story fly-in announcement ───────────────────────────────────────────
+
+function NewStoryAnnouncement({ onDone }: { onDone: () => void }) {
+  const [phase, setPhase] = useState<"appear" | "idle" | "fly">("appear");
+
+  useEffect(() => {
+    const t1 = setTimeout(() => setPhase("idle"), 750);
+    const t2 = setTimeout(() => setPhase("fly"),  3000);
+    const t3 = setTimeout(onDone,                 3850);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(t3); };
+  }, [onDone]);
+
+  const animClass =
+    phase === "appear" ? "animate-story-appear" :
+    phase === "idle"   ? "animate-story-idle"   :
+                         "animate-story-fly";
+
+  return (
+    <>
+      {/* Blurry backdrop — disappears when flying */}
+      {phase !== "fly" && (
+        <div
+          aria-hidden="true"
+          className="fixed inset-0 z-[68] pointer-events-none bg-white/40 backdrop-blur-md animate-fade-in"
+        />
+      )}
+
+      {/* Amber glow — top-center only */}
+      {phase !== "fly" && (
+        <div
+          aria-hidden="true"
+          className="fixed top-0 inset-x-0 z-[69] pointer-events-none flex justify-center"
+        >
+          <div className="w-[480px] h-48 rounded-full bg-amber-300/50 blur-3xl" />
+        </div>
+      )}
+
+      {/* Centering shell — flexbox owns horizontal center; inner div animates */}
+      <div
+        aria-hidden="true"
+        className="fixed top-10 inset-x-0 z-[70] pointer-events-none flex justify-center"
+      >
+        <div className={animClass}>
+          <div className="relative flex flex-col items-center gap-3">
+            {/* Floating sparkles */}
+            <span className="absolute -top-7 -left-5  text-2xl animate-float [animation-duration:1.4s]">✨</span>
+            <span className="absolute -top-3 -right-7 text-xl  animate-float [animation-duration:1.7s] [animation-delay:0.35s]">⭐</span>
+            <span className="absolute top-14 -left-8  text-lg  animate-float [animation-duration:2.1s] [animation-delay:0.7s]">✨</span>
+            <span className="absolute top-10 -right-7 text-base animate-float [animation-duration:1.6s] [animation-delay:0.9s]">🌟</span>
+
+            {/* Book */}
+            <span className="text-8xl leading-none drop-shadow-[0_8px_24px_rgba(251,191,36,0.75)]">📖</span>
+
+            {/* Badge */}
+            <div className="bg-amber-400 text-amber-950 font-display font-black text-base px-6 py-2.5 rounded-2xl shadow-2xl shadow-amber-500/50 whitespace-nowrap border-2 border-amber-300">
+              ✨ New Story Awaits!
+            </div>
+
+            {/* Hint */}
+            <p className="bg-white/90 text-amber-900 text-xs font-display font-bold px-4 py-1.5 rounded-full shadow-md whitespace-nowrap">
+              Tap the 📖 Story button to read it!
+            </p>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
 
 // ─── Loading ──────────────────────────────────────────────────────────────────
 
@@ -647,6 +601,16 @@ export default function GamePage() {
 
   const handleStart = () => router.push(`/game/zone/${selectedZone}`);
 
+  // ── New story announcement ─────────────────────────────────────────────────
+  const [showNewStory, setShowNewStory] = useState(false);
+  const handleNewStoryDone = useCallback(() => setShowNewStory(false), []);
+
+  useEffect(() => {
+    fetchLatestStory().catch(() => null).then(s => {
+      if (s && s.id !== getLastReadStoryId()) setShowNewStory(true);
+    });
+  }, []);
+
   if (loading || profileLoading) return <LoadingScreen />;
 
   return (
@@ -664,6 +628,9 @@ export default function GamePage() {
         <StoryButton />
         <LogoutButton />
       </div>
+
+      {/* ── New story announcement ───────────────────────────────────────── */}
+      {showNewStory && <NewStoryAnnouncement onDone={handleNewStoryDone} />}
 
       <MathParticles />
       {/* ── Background layers ─────────────────────────────────────────── */}

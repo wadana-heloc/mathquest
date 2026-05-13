@@ -52,3 +52,25 @@ export async function fetchChildStoriesSummary(): Promise<ChildStoriesSummary> {
   // return apiGet<ChildStoriesSummary>('/child/stories')
   return MOCK_STORIES
 }
+
+// ── Latest story ──────────────────────────────────────────────────────────────
+
+export interface LatestStory {
+  id: string
+  child_id: string
+  chapters: string[]
+  word_count: number
+  created_at: string
+}
+
+export async function fetchLatestStory(): Promise<LatestStory | null> {
+  console.log('[fetchLatestStory] GET /child/stories/latest')
+  try {
+    const data = await apiGet<LatestStory | null>('/child/stories/latest')
+    console.log('[fetchLatestStory] response:', data)
+    return data
+  } catch (err) {
+    console.error('[fetchLatestStory] error:', err)
+    return null
+  }
+}

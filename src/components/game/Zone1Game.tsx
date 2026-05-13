@@ -22,6 +22,8 @@ import { fetchProblem, updateStreak, advanceZone, fetchCurrentTrick, fetchUnlock
 import type { Problem, AttemptResult, HintResult, TrickData } from '@/types/game'
 import { ZONE1_EVENTS } from '@/lib/phaser/Zone1Scene'
 import { useChildProfile } from '@/lib/hooks/useChildProfile'
+import { fetchLatestStory, type LatestStory } from '@/lib/child/actions'
+import { StoryModal, getLastReadStoryId } from '@/components/game/StoryModal'
 
 //
 interface ProblemTrigger {
@@ -154,11 +156,13 @@ function BossHUD({ phase, visible }: { phase: number; visible: boolean }) {
   )
 }
 
-function CoinStreak({ coins, sessionCoins, streak, capReached, onTricks, tricksCount }: {
+function CoinStreak({ coins, sessionCoins, streak, capReached, onTricks, tricksCount, onStory, hasStory }: {
   coins: number; sessionCoins: number; streak: number
   capReached?: boolean
   onTricks?: () => void
   tricksCount?: number
+  onStory?: () => void
+  hasStory?: boolean
 }) {
   return (
     <div className="absolute top-4 left-1/2 -translate-x-1/2 z-20 flex gap-2 select-none">
@@ -194,6 +198,21 @@ function CoinStreak({ coins, sessionCoins, streak, capReached, onTricks, tricksC
             <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-yellow-400 text-[#1A1A2E] text-[9px] font-black flex items-center justify-center">
               {tricksCount}
             </span>
+          )}
+        </button>
+      )}
+      {/* Story */}
+      {onStory && (
+        <button
+          type="button"
+          onClick={onStory}
+          className="relative flex items-center gap-1.5 bg-black/50 hover:bg-amber-400/15 backdrop-blur-sm border border-amber-400/30 hover:border-amber-400/60 text-amber-300 rounded-full px-4 py-2 transition-all duration-150 active:scale-90"
+          aria-label="Read your story"
+        >
+          <span className="text-sm leading-none">📖</span>
+          <span className="font-black text-sm">Story</span>
+          {hasStory && (
+            <span className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse" />
           )}
         </button>
       )}
@@ -407,6 +426,9 @@ export default function Zone1Game() {
   const [trickData, setTrickData] = useState<TrickData | null>(null)
   const [showInsight, setShowInsight] = useState(false)
   const insightResultRef = useRef<AttemptResult | null>(null)
+  const [showStory, setShowStory]   = useState(false)
+  const [latestStory, setLatestStory] = useState<LatestStory | null>(null)
+  const [isNewStory, setIsNewStory] = useState(false)
 
   activeTriggerRef.current = activeTrigger
 
@@ -416,6 +438,13 @@ export default function Zone1Game() {
 
   useEffect(() => {
     fetchUnlockedTricks().then(d => setTricksCount(d.unlocked_tricks.length)).catch(() => {})
+  }, [])
+
+  useEffect(() => {
+    fetchLatestStory().then(s => {
+      setLatestStory(s)
+      if (s && s.id !== getLastReadStoryId()) setIsNewStory(true)
+    }).catch(() => {})
   }, [])
 
 
@@ -612,7 +641,7 @@ export default function Zone1Game() {
       <ProgressHUD solved={progress.solved} total={progress.total} />
       <BossHUD phase={bossPhase} visible={bossVisible} />
 
-      <CoinStreak coins={coins} sessionCoins={sessionCoins} streak={streak} capReached={capReached} onTricks={() => setShowTricks(true)} tricksCount={tricksCount} />
+      <CoinStreak coins={coins} sessionCoins={sessionCoins} streak={streak} capReached={capReached} onTricks={() => setShowTricks(true)} tricksCount={tricksCount} onStory={() => { setShowStory(true); setIsNewStory(false) }} hasStory={isNewStory} />
       
       {/* Back to hub
       {!activeTrigger && (
@@ -668,6 +697,9 @@ export default function Zone1Game() {
 
       {showTricks && (
         <TricksModal onClose={() => setShowTricks(false)} />
+      )}
+      {showStory && (
+        <StoryModal story={latestStory} onClose={() => setShowStory(false)} />
       )}
     </div>
   )

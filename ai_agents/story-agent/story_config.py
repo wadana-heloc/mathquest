@@ -13,3 +13,9 @@ MAX_STORY_WORDS = 600
 
 # bool — when True, attaches ephemeral cache_control to the system prompt block
 PROMPT_CACHING_ENABLED = True
+
+# str — ElevenLabs model used for text-to-speech narration
+ELEVENLABS_MODEL = "eleven_multilingual_v2"
+
+# str — ElevenLabs audio output format: MP3 at 44.1 kHz / 128 kbps
+TTS_OUTPUT_FORMAT = "mp3_44100_128"

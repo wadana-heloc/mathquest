@@ -20,8 +20,8 @@
 import sys
 import io
 import logging
-from fastapi.testclient import TestClient
-from main import app
+from wishlist_agent import price_wish
+from wishlist_schemas import PriceRequest
 
 # Force UTF-8 so em-dashes and quotes in reasoning print correctly on Windows cp1252 terminals
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding="utf-8")
@@ -30,9 +30,6 @@ sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding="utf-8")
 # Show wishlist_agent log output (exception tracebacks) in the terminal
 logging.basicConfig(stream=sys.stderr, level=logging.ERROR,
                     format="%(levelname)s %(name)s — %(message)s")
-
-# TestClient — drives the real FastAPI app; no mocks, so the Anthropic client is real
-http = TestClient(app)
 
 # tuple — the two field values that identify the fallback response
 _FALLBACK_COST     = 500
@@ -43,17 +40,16 @@ _FALLBACK_CATEGORY = "other"
 # Scenario helpers
 # ---------------------------------------------------------------------------
 
-def _post(wish_id: str, title: str, grade: int) -> dict:
-    # What: sends one POST request to /internal/price-wish and returns the parsed body.
+def _call(wish_id: str, title: str, grade: int) -> dict:
+    # What: calls price_wish() directly and returns the result as a plain dict.
     # Return: dict — wish_id, cost, category, reasoning
     # Example input: "id-001", "Pizza night", 4
     # Example output: {"wish_id": "id-001", "cost": 1200, "category": "food", "reasoning": "..."}
 
-    # dict — HTTP request body
-    payload = {"wish_id": wish_id, "title": title, "grade": grade}
-    # requests.Response — always HTTP 200 per the always-200 contract
-    response = http.post("/internal/price-wish", json=payload)
-    return response.json()
+    # PriceResponse — Pydantic model returned by price_wish
+    result = price_wish(PriceRequest(wish_id=wish_id, title=title, grade=grade))
+    # dict — plain dict for uniform access in helper functions
+    return result.model_dump()
 
 
 def _is_fallback(body: dict) -> bool:
@@ -176,32 +172,32 @@ if __name__ == "__main__":
     print("Any unexpected fallback is flagged [FALLBACK] and the traceback appears on stderr.\n")
 
     # dict — Scenario 1 result
-    r1 = _post(SCENARIO_1_ID, SCENARIO_1_TITLE, SCENARIO_1_GRADE)
+    r1 = _call(SCENARIO_1_ID, SCENARIO_1_TITLE, SCENARIO_1_GRADE)
     _print_result("Scenario 1 — Meal-out wish (Medium band expected)",
                   SCENARIO_1_TITLE, SCENARIO_1_GRADE, r1)
 
     # dict — Scenario 2 result
-    r2 = _post(SCENARIO_2_ID, SCENARIO_2_TITLE, SCENARIO_2_GRADE)
+    r2 = _call(SCENARIO_2_ID, SCENARIO_2_TITLE, SCENARIO_2_GRADE)
     _print_result("Scenario 2 — Screen time (Small band expected)",
                   SCENARIO_2_TITLE, SCENARIO_2_GRADE, r2)
 
     # dict — Scenario 3 result
-    r3 = _post(SCENARIO_3_ID, SCENARIO_3_TITLE, SCENARIO_3_GRADE)
+    r3 = _call(SCENARIO_3_ID, SCENARIO_3_TITLE, SCENARIO_3_GRADE)
     _print_result("Scenario 3 — Toy wish (Large band expected)",
                   SCENARIO_3_TITLE, SCENARIO_3_GRADE, r3)
 
     # dict — Scenario 4 result
-    r4 = _post(SCENARIO_4_ID, SCENARIO_4_TITLE, SCENARIO_4_GRADE)
+    r4 = _call(SCENARIO_4_ID, SCENARIO_4_TITLE, SCENARIO_4_GRADE)
     _print_result("Scenario 4 — Experience wish (Medium band expected)",
                   SCENARIO_4_TITLE, SCENARIO_4_GRADE, r4)
 
     # dict — Scenario 5 result
-    r5 = _post(SCENARIO_5_ID, SCENARIO_5_TITLE, SCENARIO_5_GRADE)
+    r5 = _call(SCENARIO_5_ID, SCENARIO_5_TITLE, SCENARIO_5_GRADE)
     _print_result("Scenario 5 — Vague wish (ambiguity test)",
                   SCENARIO_5_TITLE, SCENARIO_5_GRADE, r5)
 
     # dict — Scenario 6 result (long title — truncated, not a fallback)
-    r6 = _post(SCENARIO_6_ID, SCENARIO_6_TITLE, SCENARIO_6_GRADE)
+    r6 = _call(SCENARIO_6_ID, SCENARIO_6_TITLE, SCENARIO_6_GRADE)
     _print_result(
         f"Scenario 6 — Long title ({len(SCENARIO_6_TITLE)} chars, truncated to 120)",
         SCENARIO_6_TITLE[:50] + "...",
@@ -210,7 +206,7 @@ if __name__ == "__main__":
     )
 
     # dict — Scenario 7 result (fast-path fallback — expected, no Claude call)
-    r7 = _post(SCENARIO_7_ID, SCENARIO_7_TITLE, SCENARIO_7_GRADE)
+    r7 = _call(SCENARIO_7_ID, SCENARIO_7_TITLE, SCENARIO_7_GRADE)
     _print_result("Scenario 7 — Empty title (fallback expected)",
                   "(empty)", SCENARIO_7_GRADE, r7, expect_fallback=True)
 

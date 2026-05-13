@@ -1,10 +1,16 @@
 # wishlist_agent.py
 """
 Calls the Anthropic Claude API to price a child's wish in coins for MathQuest.
-Exposes a single internal FastAPI endpoint that the backend calls after inserting
-a wish row. Returns a cost, category, and reasoning. Never touches the database —
-the backend writes the result. Always returns HTTP 200; falls back to a safe
-default on any error so the backend is never left without a value to write.
+Exposes price_wish() — a plain function the backend imports and calls directly.
+Returns a PriceResponse (wish_id, cost, category, reasoning). Never touches the
+database — the backend writes the result. Always returns a value; falls back to
+a safe default on any error so the backend is never left without a value to write.
+
+Backend integration:
+    from wishlist_agent import price_wish
+    from wishlist_schemas import PriceRequest
+
+    result = price_wish(PriceRequest(wish_id=..., title=..., grade=...))
 """
 
 import os
@@ -13,7 +19,6 @@ import logging
 import traceback
 import anthropic
 from dotenv import load_dotenv
-from fastapi import APIRouter
 from wishlist_schemas import PriceRequest, PriceResponse
 from wishlist_config import (
     MODEL,
@@ -28,10 +33,6 @@ from wishlist_config import (
 # Load from local .env first, then fall back to the shared ai_agents/.env
 load_dotenv()
 load_dotenv(os.path.join(os.path.dirname(__file__), "..", ".env"))
-
-# APIRouter — imported directly by the backend: app.include_router(wishlist_router)
-# main.py in this folder is a dev-only entry point; production uses the backend.
-wishlist_router = APIRouter()
 
 # str — the exact system prompt sent to Claude on every request
 # Cost bands and coin-earning rules are sourced from the AI engineer spec.
@@ -141,27 +142,26 @@ def _parse_claude_response(text: str) -> dict:
     }
 
 
-@wishlist_router.post("/internal/price-wish", response_model=PriceResponse)
-async def price_wish(req: PriceRequest):
+def price_wish(req: PriceRequest) -> PriceResponse:
     """
     What it does:
         Sanitises the incoming wish title, calls Claude to get a coin price, and
-        returns the result. Always returns HTTP 200 — on any failure it returns the
-        fallback so the backend always gets a value to write to the database.
+        returns the result. On any failure it returns the fallback so the backend
+        always gets a value to write to the database.
         The parent can manually adjust the cost if the fallback lands.
 
     Returns:
         PriceResponse — wish_id, cost, category, reasoning
 
-    Example input (request body):
-        {"wish_id": "550e8400-...", "title": "Pizza night", "grade": 5}
+    Example input:
+        PriceRequest(wish_id="550e8400-...", title="Pizza night", grade=5)
 
     Example output (on success):
-        {"wish_id": "550e8400-...", "cost": 1000, "category": "food", "reasoning": "..."}
+        PriceResponse(wish_id="550e8400-...", cost=1000, category="food", reasoning="...")
 
     Example output (on failure):
-        {"wish_id": "550e8400-...", "cost": 500, "category": "other",
-         "reasoning": "Pricing unavailable — suggested default."}
+        PriceResponse(wish_id="550e8400-...", cost=500, category="other",
+                      reasoning="Pricing unavailable — suggested default.")
     """
     try:
         # str — sanitised title; empty string triggers an immediate fallback

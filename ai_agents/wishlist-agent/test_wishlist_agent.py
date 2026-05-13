@@ -3,21 +3,17 @@
 Unit tests for wishlist_agent.py.
 No real API calls are made — all Anthropic client calls are mocked.
 Tests verify our own logic: input sanitisation, message assembly, response
-parsing, and endpoint behaviour on success, fallback, and error paths.
+parsing, and price_wish() behaviour on success, fallback, and error paths.
 """
 
 import json
 import pytest
 from unittest.mock import MagicMock, patch
-from fastapi.testclient import TestClient
 
-from wishlist_agent import _sanitise_title, _build_user_message, _parse_claude_response
-from main import app
+from wishlist_agent import _sanitise_title, _build_user_message, _parse_claude_response, price_wish
+from wishlist_schemas import PriceRequest
 
-# TestClient — drives the FastAPI app over HTTP without a running server
-http = TestClient(app)
-
-# str — a stable wish_id reused across endpoint tests
+# str — a stable wish_id reused across price_wish tests
 WISH_ID = "550e8400-e29b-41d4-a716-446655440000"
 
 
@@ -80,7 +76,7 @@ class TestSanitiseTitle:
         assert _sanitise_title(exact_title) == exact_title
 
     def test_empty_string_returns_empty_string(self):
-        # str — empty input stays empty (triggers fallback in the endpoint)
+        # str — empty input stays empty (triggers fallback in price_wish)
         assert _sanitise_title("") == ""
 
     def test_whitespace_only_returns_empty_string(self):
@@ -179,6 +175,12 @@ class TestParseClaudeResponse:
         result = _parse_claude_response(text)
         assert result["cost"] == 500
 
+    def test_strips_markdown_fences(self):
+        # dict — JSON wrapped in ```json fences must be parsed correctly
+        text = '```json\n{"cost": 800, "category": "food", "reasoning": "Meal."}\n```'
+        result = _parse_claude_response(text)
+        assert result["cost"] == 800
+
     def test_raises_on_invalid_json(self):
         # json.JSONDecodeError — malformed JSON must propagate so the caller falls back
         with pytest.raises(Exception):
@@ -198,124 +200,95 @@ class TestParseClaudeResponse:
 
 
 # ---------------------------------------------------------------------------
-# TestPriceWishEndpoint
+# TestPriceWish
 # ---------------------------------------------------------------------------
 
-class TestPriceWishEndpoint:
+class TestPriceWish:
     """
-    Tests for POST /internal/price-wish.
+    Tests for price_wish().
     Covers: happy path, empty title fallback, long title handling,
-            Claude API error fallback, always-200 contract.
+            Claude API error fallback, wish_id echo, response shape.
     """
 
     @patch("wishlist_agent.anthropic.Anthropic")
     def test_happy_path_returns_cost_category_reasoning(self, mock_anthropic_class):
-        # dict — successful Claude call must return parsed cost/category/reasoning
+        # PriceResponse — successful Claude call must return parsed cost/category/reasoning
         mock_client = MagicMock()
         mock_anthropic_class.return_value = mock_client
         mock_client.messages.create.return_value = _make_mock_response(
             {"cost": 1000, "category": "food", "reasoning": "A meal out."}
         )
 
-        # dict — HTTP response body
-        response = http.post(
-            "/internal/price-wish",
-            json={"wish_id": WISH_ID, "title": "Pizza night", "grade": 5},
-        )
+        result = price_wish(PriceRequest(wish_id=WISH_ID, title="Pizza night", grade=5))
 
-        assert response.status_code == 200
-        body = response.json()
-        assert body["wish_id"] == WISH_ID
-        assert body["cost"] == 1000
-        assert body["category"] == "food"
-        assert body["reasoning"] == "A meal out."
+        assert result.wish_id == WISH_ID
+        assert result.cost == 1000
+        assert result.category == "food"
+        assert result.reasoning == "A meal out."
 
     @patch("wishlist_agent.anthropic.Anthropic")
     def test_empty_title_returns_fallback_without_calling_claude(self, mock_anthropic_class):
-        # dict — empty title must trigger fallback; Claude must NOT be called
+        # PriceResponse — empty title must trigger fallback; Claude must NOT be called
         mock_client = MagicMock()
         mock_anthropic_class.return_value = mock_client
 
-        response = http.post(
-            "/internal/price-wish",
-            json={"wish_id": WISH_ID, "title": "", "grade": 5},
-        )
+        result = price_wish(PriceRequest(wish_id=WISH_ID, title="", grade=5))
 
-        assert response.status_code == 200
-        body = response.json()
-        assert body["cost"] == 500
-        assert body["category"] == "other"
-        # Claude was not called
+        assert result.cost == 500
+        assert result.category == "other"
         mock_client.messages.create.assert_not_called()
 
     @patch("wishlist_agent.anthropic.Anthropic")
     def test_whitespace_only_title_returns_fallback(self, mock_anthropic_class):
-        # dict — whitespace-only title counts as empty; same fallback path
+        # PriceResponse — whitespace-only title counts as empty; same fallback path
         mock_client = MagicMock()
         mock_anthropic_class.return_value = mock_client
 
-        response = http.post(
-            "/internal/price-wish",
-            json={"wish_id": WISH_ID, "title": "   ", "grade": 5},
-        )
+        result = price_wish(PriceRequest(wish_id=WISH_ID, title="   ", grade=5))
 
-        assert response.status_code == 200
-        assert response.json()["cost"] == 500
+        assert result.cost == 500
         mock_client.messages.create.assert_not_called()
 
     @patch("wishlist_agent.anthropic.Anthropic")
     def test_long_title_does_not_crash(self, mock_anthropic_class):
-        # dict — title of 200 chars must be truncated and handled without error
+        # PriceResponse — title of 200 chars must be truncated and handled without error
         mock_client = MagicMock()
         mock_anthropic_class.return_value = mock_client
         mock_client.messages.create.return_value = _make_mock_response(
             {"cost": 500, "category": "other", "reasoning": "Generic."}
         )
 
-        response = http.post(
-            "/internal/price-wish",
-            json={"wish_id": WISH_ID, "title": "a" * 200, "grade": 5},
-        )
+        result = price_wish(PriceRequest(wish_id=WISH_ID, title="a" * 200, grade=5))
 
-        assert response.status_code == 200
+        assert result.wish_id == WISH_ID
 
     @patch("wishlist_agent.anthropic.Anthropic")
     def test_claude_api_error_returns_fallback(self, mock_anthropic_class):
-        # dict — Claude API exception must return fallback, never a 500
+        # PriceResponse — Claude API exception must return fallback, never raise
         mock_client = MagicMock()
         mock_anthropic_class.return_value = mock_client
         mock_client.messages.create.side_effect = Exception("API unavailable")
 
-        response = http.post(
-            "/internal/price-wish",
-            json={"wish_id": WISH_ID, "title": "Pizza night", "grade": 5},
-        )
+        result = price_wish(PriceRequest(wish_id=WISH_ID, title="Pizza night", grade=5))
 
-        assert response.status_code == 200
-        body = response.json()
-        assert body["cost"] == 500
-        assert body["category"] == "other"
+        assert result.cost == 500
+        assert result.category == "other"
 
     @patch("wishlist_agent.anthropic.Anthropic")
     def test_invalid_json_from_claude_returns_fallback(self, mock_anthropic_class):
-        # dict — malformed JSON from Claude must return fallback, never a 500
+        # PriceResponse — malformed JSON from Claude must return fallback, never raise
         mock_client = MagicMock()
         mock_anthropic_class.return_value = mock_client
 
-        # MagicMock — Claude returns something that is not valid JSON
         bad_block = MagicMock()
         bad_block.text = "Sorry, I cannot help with that."
         bad_response = MagicMock()
         bad_response.content = [bad_block]
         mock_client.messages.create.return_value = bad_response
 
-        response = http.post(
-            "/internal/price-wish",
-            json={"wish_id": WISH_ID, "title": "Pizza night", "grade": 5},
-        )
+        result = price_wish(PriceRequest(wish_id=WISH_ID, title="Pizza night", grade=5))
 
-        assert response.status_code == 200
-        assert response.json()["cost"] == 500
+        assert result.cost == 500
 
     @patch("wishlist_agent.anthropic.Anthropic")
     def test_wish_id_is_always_echoed_back(self, mock_anthropic_class):
@@ -324,35 +297,22 @@ class TestPriceWishEndpoint:
         mock_anthropic_class.return_value = mock_client
         mock_client.messages.create.side_effect = Exception("timeout")
 
-        response = http.post(
-            "/internal/price-wish",
-            json={"wish_id": WISH_ID, "title": "Any wish", "grade": 3},
-        )
+        result = price_wish(PriceRequest(wish_id=WISH_ID, title="Any wish", grade=3))
 
-        assert response.json()["wish_id"] == WISH_ID
+        assert result.wish_id == WISH_ID
 
     @patch("wishlist_agent.anthropic.Anthropic")
-    def test_extra_fields_in_request_are_ignored(self, mock_anthropic_class):
-        # dict — PII or extra fields sent by the backend must be silently dropped
+    def test_response_contains_only_expected_fields(self, mock_anthropic_class):
+        # PriceResponse — result must only expose wish_id, cost, category, reasoning
         mock_client = MagicMock()
         mock_anthropic_class.return_value = mock_client
         mock_client.messages.create.return_value = _make_mock_response(
             {"cost": 300, "category": "screen_time", "reasoning": "Short."}
         )
 
-        response = http.post(
-            "/internal/price-wish",
-            json={
-                "wish_id": WISH_ID,
-                "title": "Screen time",
-                "grade": 3,
-                "child_name": "Alice",     # PII — must be ignored
-                "parent_id": "secret-123", # extra field — must be ignored
-            },
-        )
+        result = price_wish(PriceRequest(wish_id=WISH_ID, title="Screen time", grade=3))
 
-        assert response.status_code == 200
-        # Response must not contain the extra fields
-        body = response.json()
-        assert "child_name" not in body
-        assert "parent_id" not in body
+        # dict — model fields only; accessed from the class, not the instance
+        from wishlist_schemas import PriceResponse
+        fields = set(PriceResponse.model_fields.keys())
+        assert fields == {"wish_id", "cost", "category", "reasoning"}

@@ -36,10 +36,6 @@ export interface ChildStoriesSummary {
   total_chapters: number   // total chapters across all approved stories
 }
 
-const MOCK_STORIES: ChildStoriesSummary = {
-  total_approved: 0,
-  total_chapters: 0,
-}
 
 // ── Actions ───────────────────────────────────────────────────────────────────
 
@@ -48,9 +44,27 @@ export async function fetchChildStatsSummary(): Promise<ChildStatsSummary> {
 }
 
 export async function fetchChildStoriesSummary(): Promise<ChildStoriesSummary> {
-  // TODO: replace with real endpoint when backend is ready
-  // return apiGet<ChildStoriesSummary>('/child/stories')
-  return MOCK_STORIES
+  // Try list endpoint — may return LatestStory[]
+  try {
+    const list = await apiGet<LatestStory[]>('/child/stories')
+    if (Array.isArray(list)) {
+      return {
+        total_approved: list.length,
+        total_chapters: list.reduce((sum, s) => sum + s.chapters.length, 0),
+      }
+    }
+  } catch { /* fall through */ }
+
+  // Fall back to latest — at least tells us if ≥ 1 story exists
+  try {
+    const latest = await apiGet<LatestStory | null>('/child/stories/latest')
+    return {
+      total_approved: latest ? 1 : 0,
+      total_chapters: latest ? latest.chapters.length : 0,
+    }
+  } catch {
+    return { total_approved: 0, total_chapters: 0 }
+  }
 }
 
 // ── Latest story ──────────────────────────────────────────────────────────────

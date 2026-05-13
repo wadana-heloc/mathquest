@@ -998,7 +998,7 @@ function SettingsTab({ child, childGameId, onSave, onAudioChange }: {
           )}
         </SectionCard>
 
-        <SectionCard title="📈 Difficulty Auto-Scaling">
+        {/* <SectionCard title="📈 Difficulty Auto-Scaling">
           <div className="flex items-center justify-between p-4 bg-stone-50 rounded-xl mb-4">
             <div>
               <div className="text-sm font-semibold text-stone-700">Auto-Scaling</div>
@@ -1016,7 +1016,7 @@ function SettingsTab({ child, childGameId, onSave, onAudioChange }: {
               <p className="text-[11px] text-stone-500">Zone will only advance when you approve it manually.</p>
             </div>
           )}
-        </SectionCard>
+        </SectionCard> */}
 
  
       </div>
@@ -1966,6 +1966,10 @@ export default function ParentDashboardClient({ parentName, parentEmail, dbChild
         <button onClick={() => { setAddError(null); setShowAdd(true); }}
           className="px-8 h-12 rounded-2xl bg-primary text-white font-display font-800 text-sm hover:bg-navy-light transition-colors shadow-lg">
           ✨ Add Your First Child
+        </button>
+        <button type="button" onClick={handleSignOut}
+          className="mt-4 px-6 h-10 rounded-xl border border-stone-300 text-stone-500 text-sm font-body hover:border-stone-400 hover:text-stone-700 transition-colors">
+          Log out
         </button>
         {showAdd && (
           <AddChildModal

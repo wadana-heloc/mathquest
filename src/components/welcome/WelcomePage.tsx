@@ -1336,6 +1336,7 @@ import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { useUser } from "@/lib/hooks/useUser";
+import { createClient } from "@/lib/supabase/client";
 
 const MathParticles = dynamic(
   () => import("@/components/phaser/MathParticles"),
@@ -1533,6 +1534,12 @@ export default function WelcomePage() {
   const userRole: string = user?.user_metadata?.role ?? "child";
   const gameHref = userRole === "parent" ? "/parent/dashboard" : "/game";
 
+  async function handleLogout() {
+    const supabase = createClient();
+    await supabase.auth.signOut();
+    window.location.href = "/";
+  }
+
   // Staggered entrance
   useEffect(() => {
     const t = setTimeout(() => setVisible(true), 100);
@@ -1667,6 +1674,13 @@ export default function WelcomePage() {
                   >
                     {userRole === "parent" ? "Dashboard →" : "Continue Quest →"}
                   </Link>
+                  <button
+                    type="button"
+                    onClick={handleLogout}
+                    className="text-slate-500 hover:text-slate-800 text-sm font-body transition-colors px-3 py-1.5 rounded-md border border-slate-200 hover:border-slate-400"
+                  >
+                    Log out
+                  </button>
                 </>
               ) : (
                 <>

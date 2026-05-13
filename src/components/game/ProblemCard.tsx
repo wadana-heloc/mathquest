@@ -635,7 +635,7 @@ export function ProblemCard({
       {/* ── Card shell ────────────────────────────────────── */}
       <div
         className={`
-          relative overflow-hidden rounded-2xl border
+          relative overflow-x-hidden overflow-y-auto max-h-[85vh] rounded-2xl border
           ${theme.cardBg} transition-all duration-300
           ${cardBorderClass}
         `}
@@ -702,7 +702,7 @@ export function ProblemCard({
               >
                 {problem.stem.split('\n')[0]}
               </h2>
-              <pre className="text-[13px] text-white font-mono leading-snug whitespace-pre overflow-x-auto text-left block w-full">
+              <pre className="text-[13px] text-white font-mono leading-snug whitespace-pre overflow-x-auto overflow-y-auto max-h-48 text-left block w-full">
                 {problem.stem.split('\n').slice(1).join('\n')}
               </pre>
             </>

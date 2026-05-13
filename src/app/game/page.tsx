@@ -749,9 +749,9 @@ export default function GamePage() {
                   icon="📖"
                   value={stories.total_approved}
                   label="Stories"
-                  colorClass="text-teal"
-                  borderClass="border-teal/25"
-                  bgClass="bg-teal/8"
+                  colorClass={stories.total_approved > 0 ? "text-teal" : "text-slate-300"}
+                  borderClass={stories.total_approved > 0 ? "border-teal/25" : "border-slate-100"}
+                  bgClass={stories.total_approved > 0 ? "bg-teal/8" : "bg-slate-50"}
                   animDelay="0.5s"
                 />
                 <StatCard

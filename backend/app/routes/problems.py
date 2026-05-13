@@ -860,12 +860,16 @@ async def attempt_problem(
     )
 
     threshold_ms = problem.get("shortcut_time_threshold_ms")
-    insight_detected = (
-        correct
-        and payload.hint_level_used == 0
-        and threshold_ms is not None
-        and payload.duration_ms <= threshold_ms
-    )
+    if threshold_ms is not None:
+        insight_detected = (
+            correct
+            and payload.hint_level_used == 0
+            and payload.duration_ms <= threshold_ms
+        )
+    else:
+        # No time threshold on this problem — any correct, hint-free answer counts as an insight.
+        # Trick still unlocks at insight_count >= INSIGHT_THRESHOLD (3) via _update_trick_insight.
+        insight_detected = correct and payload.hint_level_used == 0
 
     daily_earned, did_reset = _apply_daily_reset(child_row)
 

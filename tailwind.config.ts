@@ -141,6 +141,32 @@ const config: Config = {
           "0%":   { opacity: "1", transform: "translateY(0) translateX(0) scale(1)" },
           "100%": { opacity: "0", transform: "translateY(0) translateX(calc(50vw - 4rem)) scale(0.05)" },
         },
+        // ── Game page decorative ────────────────────────────────────────────
+        "float-math": {
+          "0%":   { opacity: "0",   transform: "translateY(0) rotate(-10deg) scale(0.9)" },
+          "8%":   { opacity: "0.8" },
+          "85%":  { opacity: "0.5" },
+          "100%": { opacity: "0",   transform: "translateY(-115vh) rotate(25deg) scale(1.1)" },
+        },
+        "mascot-swing": {
+          "0%":   { transform: "translateY(0) rotate(0deg) scale(1)" },
+          "20%":  { transform: "translateY(-12px) rotate(-18deg) scale(1.12)" },
+          "45%":  { transform: "translateY(-4px) rotate(14deg) scale(1.08)" },
+          "70%":  { transform: "translateY(-8px) rotate(-4deg) scale(1.04)" },
+          "100%": { transform: "translateY(0) rotate(0deg) scale(1)" },
+        },
+        "zone-orb": {
+          "0%":   { backgroundPosition: "-100% 0" },
+          "100%": { backgroundPosition: "250% 0" },
+        },
+        "twinkle": {
+          "0%, 100%": { opacity: "0.1", transform: "scale(0.6) rotate(0deg)" },
+          "50%":      { opacity: "0.9", transform: "scale(1.3) rotate(18deg)" },
+        },
+        "boss-float": {
+          "0%, 100%": { transform: "translateY(0) scale(1)" },
+          "50%":      { transform: "translateY(-6px) scale(1.08)" },
+        },
       },
       animation: {
         // Auth
@@ -168,6 +194,12 @@ const config: Config = {
         "story-appear": "story-appear 0.75s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards",
         "story-idle":   "story-idle 0.95s ease-in-out infinite",
         "story-fly":    "story-fly 0.8s cubic-bezier(0.55, 0, 1, 0.45) forwards",
+        // Game page decorative
+        "float-math":   "float-math 12s linear infinite",
+        "mascot-swing": "mascot-swing 0.65s cubic-bezier(0.175, 0.885, 0.32, 1.275) forwards",
+        "zone-orb":     "zone-orb 2.5s linear infinite",
+        "twinkle":      "twinkle 2.5s ease-in-out infinite",
+        "boss-float":   "boss-float 2.2s ease-in-out infinite",
       },
     },
   },

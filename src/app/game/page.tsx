@@ -527,6 +527,87 @@ function NewStoryAnnouncement({ onDone }: { onDone: () => void }) {
   );
 }
 
+// ─── Floating math symbols ────────────────────────────────────────────────────
+
+const MATH_FLOATERS = [
+  { sym: "+",  left: "7%",  dur: "14s", del: "0s",   size: "1.5rem", color: "#2DD4BF" },
+  { sym: "×",  left: "14%", dur: "11s", del: "2.3s", size: "1.1rem", color: "#7C3AED" },
+  { sym: "÷",  left: "23%", dur: "16s", del: "0.8s", size: "1.3rem", color: "#E8B84B" },
+  { sym: "=",  left: "31%", dur: "12s", del: "4.1s", size: "1.0rem", color: "#F97316" },
+  { sym: "7",  left: "40%", dur: "13s", del: "1.5s", size: "1.4rem", color: "#2DD4BF" },
+  { sym: "−",  left: "49%", dur: "10s", del: "3.0s", size: "1.6rem", color: "#7C3AED" },
+  { sym: "3",  left: "57%", dur: "15s", del: "0.4s", size: "1.1rem", color: "#E8B84B" },
+  { sym: "+",  left: "66%", dur: "12s", del: "2.7s", size: "1.2rem", color: "#F97316" },
+  { sym: "²",  left: "73%", dur: "17s", del: "1.1s", size: "0.9rem", color: "#22C55E" },
+  { sym: "×",  left: "81%", dur: "11s", del: "3.8s", size: "1.3rem", color: "#2DD4BF" },
+  { sym: "9",  left: "89%", dur: "14s", del: "0.6s", size: "1.0rem", color: "#7C3AED" },
+  { sym: "÷",  left: "95%", dur: "13s", del: "2.0s", size: "1.2rem", color: "#E8B84B" },
+  { sym: "5",  left: "18%", dur: "16s", del: "5.5s", size: "1.4rem", color: "#F97316" },
+  { sym: "=",  left: "60%", dur: "12s", del: "4.7s", size: "1.1rem", color: "#22C55E" },
+  { sym: "8",  left: "44%", dur: "15s", del: "1.9s", size: "1.3rem", color: "#2DD4BF" },
+];
+
+function FloatingMathSymbols() {
+  return (
+    <div aria-hidden="true" className="pointer-events-none fixed inset-0 overflow-hidden z-0">
+      {MATH_FLOATERS.map((f, i) => (
+        <span
+          key={i}
+          className="absolute bottom-0 font-display font-black animate-float-math select-none"
+          style={{ left: f.left, fontSize: f.size, color: f.color, opacity: 0, animationDuration: f.dur, animationDelay: f.del }}
+        >
+          {f.sym}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+// ─── Twinkling stars ──────────────────────────────────────────────────────────
+
+const TWINKLE_STARS = [
+  { sym: "✦", top: "6%",  left: "9%",  dur: "2.1s", del: "0s",   color: "#E8B84B" },
+  { sym: "✧", top: "11%", left: "87%", dur: "3.2s", del: "0.8s", color: "#2DD4BF" },
+  { sym: "★", top: "19%", left: "54%", dur: "2.7s", del: "1.4s", color: "#7C3AED" },
+  { sym: "✦", top: "28%", left: "21%", dur: "1.9s", del: "2.1s", color: "#F97316" },
+  { sym: "✧", top: "71%", left: "77%", dur: "2.5s", del: "0.4s", color: "#E8B84B" },
+  { sym: "★", top: "84%", left: "39%", dur: "3.0s", del: "1.7s", color: "#2DD4BF" },
+  { sym: "✦", top: "44%", left: "95%", dur: "2.3s", del: "0.9s", color: "#7C3AED" },
+  { sym: "✧", top: "59%", left: "4%",  dur: "2.8s", del: "1.2s", color: "#22C55E" },
+  { sym: "★", top: "35%", left: "67%", dur: "2.2s", del: "3.1s", color: "#E8B84B" },
+  { sym: "✦", top: "78%", left: "14%", dur: "1.8s", del: "0.5s", color: "#2DD4BF" },
+];
+
+// ─── Animated mascot character ────────────────────────────────────────────────
+
+function AnimatedMascot() {
+  const [swinging, setSwinging] = useState(false);
+
+  useEffect(() => {
+    const id = setInterval(() => {
+      setSwinging(true);
+      setTimeout(() => setSwinging(false), 700);
+    }, 3500);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div className="relative flex flex-col items-center select-none pb-1" aria-hidden="true">
+      <div className="absolute bottom-0 w-8 h-1.5 bg-black/10 rounded-full blur-sm" />
+      <span
+        key={swinging ? "swing" : "idle"}
+        className={`text-6xl md:text-7xl block leading-none ${swinging ? "animate-mascot-swing" : "animate-float-logo"}`}
+        style={{ filter: "drop-shadow(0 4px 14px rgba(232,184,75,0.55))" }}
+      >
+        🧙‍♂️
+      </span>
+      {swinging && (
+        <span className="absolute -top-2 -right-1 text-base animate-ping" aria-hidden="true">✨</span>
+      )}
+    </div>
+  );
+}
+
 // ─── Loading ──────────────────────────────────────────────────────────────────
 
 function LoadingScreen() {
@@ -633,6 +714,7 @@ export default function GamePage() {
       {/* ── New story announcement ───────────────────────────────────────── */}
       {showNewStory && <NewStoryAnnouncement onDone={handleNewStoryDone} />}
 
+      <FloatingMathSymbols />
       <MathParticles />
       {/* ── Background layers ─────────────────────────────────────────── */}
       <div aria-hidden="true" className="pointer-events-none fixed inset-0 overflow-hidden">
@@ -653,6 +735,16 @@ export default function GamePage() {
             style={{ width: p.w, height: p.w, top: p.top, left: p.left, animationDuration: p.dur, animationDelay: p.del }}
           />
         ))}
+        {/* Twinkling stars */}
+        {TWINKLE_STARS.map((s, i) => (
+          <span
+            key={i}
+            className="absolute font-bold animate-twinkle select-none pointer-events-none"
+            style={{ top: s.top, left: s.left, color: s.color, fontSize: "0.65rem", animationDuration: s.dur, animationDelay: s.del }}
+          >
+            {s.sym}
+          </span>
+        ))}
       </div>
 
       {/* ── Page wrapper — wider on tablet/desktop ─────────────────────── */}
@@ -667,17 +759,20 @@ export default function GamePage() {
 
             {/* Hero */}
             <header className="text-center md:text-left animate-fade-up">
-              {/* Orbit + emoji */}
-              <div className="relative inline-flex items-center justify-center mb-4 md:mb-5">
-                <div
-                  aria-hidden="true"
-                  className="absolute w-24 h-24 rounded-full border border-dashed border-gold/20 animate-spin-slow"
-                />
-                <div
-                  aria-hidden="true"
-                  className="absolute w-16 h-16 rounded-full border border-dotted border-teal/15 animate-spin-slow [animation-direction:reverse] [animation-duration:14s]"
-                />
-                <span className="relative text-5xl md:text-6xl animate-float-logo" aria-hidden="true">🎮</span>
+              {/* Orbit + emoji + mascot */}
+              <div className="flex items-end justify-center gap-4 mb-4 md:mb-5">
+                <div className="relative inline-flex items-center justify-center w-24 h-24">
+                  <div
+                    aria-hidden="true"
+                    className="absolute w-24 h-24 rounded-full border border-dashed border-gold/20 animate-spin-slow"
+                  />
+                  <div
+                    aria-hidden="true"
+                    className="absolute w-16 h-16 rounded-full border border-dotted border-teal/15 animate-spin-slow [animation-direction:reverse] [animation-duration:14s]"
+                  />
+                  <span className="relative text-5xl md:text-6xl animate-float-logo" aria-hidden="true">🎮</span>
+                </div>
+                <AnimatedMascot />
               </div>
 
               <h1 className="font-display font-black text-gold leading-none tracking-tight animate-title-reveal"
@@ -850,8 +945,14 @@ export default function GamePage() {
             </div> */}
             <div className="relative w-full py-6" role="group" aria-labelledby="zone-label">
   
-  {/* Connection Line */}
-  <div className="absolute top-1/2 left-4 right-4 h-[2px] bg-slate-200 -translate-y-1/2" />
+  {/* Connection Line + traveling orb */}
+  <div className="absolute top-1/2 left-4 right-4 h-[2px] bg-slate-200 -translate-y-1/2 overflow-hidden rounded-full">
+    <div
+      aria-hidden="true"
+      className="absolute inset-0 animate-zone-orb"
+      style={{ background: "linear-gradient(90deg, transparent 0%, rgba(232,184,75,0.9) 50%, transparent 100%)", backgroundSize: "40% 100%" }}
+    />
+  </div>
 
   {/* Zones */}
   <div className="relative flex items-center justify-between px-2">
@@ -913,7 +1014,7 @@ export default function GamePage() {
                 className={`flex items-center gap-4 rounded-xl border-2 px-5 py-4 transition-all duration-300 animate-fade-in ${selectedZoneInfo.activeBorder} ${selectedZoneInfo.activeBg} ${selectedZoneInfo.activeGlow}`}
                 aria-live="polite"
               >
-                <span className="text-3xl leading-none flex-shrink-0" aria-hidden="true">{selectedZoneInfo.emoji}</span>
+                <span className="text-3xl leading-none flex-shrink-0 animate-boss-float" aria-hidden="true">{selectedZoneInfo.emoji}</span>
                 <div className="flex-1 min-w-0">
                   <p className={`font-display font-black text-base leading-tight ${selectedZoneInfo.activeText}`}>
                     {selectedZoneInfo.name}

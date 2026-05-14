@@ -297,13 +297,14 @@ function Section({
       id={id}
       className={[
         "rounded-xl border transition-all duration-300",
-        open ? borderColor : "border-white/5",
+        open ? borderColor : "border-slate-200",
         "overflow-hidden",
       ].join(" ")}
       style={{
         background: open
-          ? "linear-gradient(135deg, rgba(37,37,71,0.8) 0%, rgba(26,26,46,0.9) 100%)"
-          : "rgba(255,255,255,0.03)",
+          ? "rgba(255,255,255,0.92)"
+          : "rgba(255,255,255,0.75)",
+        backdropFilter: "blur(8px)",
       }}
     >
       {/* Header row — always visible */}
@@ -315,17 +316,17 @@ function Section({
           {number}
         </span>
         <div className="flex-1 min-w-0">
-          <h3 className="font-display font-bold text-white text-base md:text-lg leading-snug">
+          <h3 className="font-display font-bold text-slate-800 text-base md:text-lg leading-snug">
             {title}
           </h3>
           {!open && (
-            <p className="text-white/30 text-xs font-body mt-1 leading-relaxed line-clamp-1">
+            <p className="text-slate-400 text-xs font-body mt-1 leading-relaxed line-clamp-1">
               {friendly}
             </p>
           )}
         </div>
         <span className={[
-          "flex-shrink-0 text-white/30 text-lg transition-transform duration-300 mt-0.5",
+          "flex-shrink-0 text-slate-400 text-lg transition-transform duration-300 mt-0.5",
           open ? "rotate-45" : "",
         ].join(" ")}>
           +
@@ -338,9 +339,9 @@ function Section({
           {/* Friendly summary */}
           <div
             className={`rounded-md px-4 py-3 mb-5 border ${borderColor}`}
-            style={{ background: "rgba(255,255,255,0.04)" }}
+            style={{ background: "rgba(99,102,241,0.05)" }}
           >
-            <p className="text-white/60 text-sm font-body leading-relaxed">
+            <p className="text-slate-600 text-sm font-body leading-relaxed">
               <span className={`${color} font-semibold`}>In plain terms: </span>
               {friendly}
             </p>
@@ -349,14 +350,14 @@ function Section({
           {/* Legal detail */}
           {content.map((block) => (
             <div key={block.subtitle} className="mb-5 last:mb-0">
-              <h4 className="text-white/50 text-xs font-body uppercase tracking-widest mb-3">
+              <h4 className="text-slate-500 text-xs font-body uppercase tracking-widest mb-3">
                 {block.subtitle}
               </h4>
               <ul className="space-y-2">
                 {block.items.map((item, i) => (
                   <li key={i} className="flex items-start gap-2.5">
                     <span className={`${color} text-xs mt-1 flex-shrink-0`}>◆</span>
-                    <span className="text-white/60 text-sm font-body leading-relaxed">{item}</span>
+                    <span className="text-slate-600 text-sm font-body leading-relaxed">{item}</span>
                   </li>
                 ))}
               </ul>
@@ -371,32 +372,23 @@ function Section({
 // ─────────────────────────────────────────────────────────────────────────────
 export default function TermsOfPlayPage() {
   return (
-    <div
-      className="relative min-h-screen w-full"
-      style={{ background: "radial-gradient(ellipse at 30% 10%, #252547 0%, #1A1A2E 50%, #0d0d1f 100%)" }}
-    >
-      {/* Noise + grid */}
-      <div className="noise-overlay" aria-hidden="true" />
-      <div
-        className="fixed inset-0 z-0 pointer-events-none opacity-[0.025]"
-        style={{
-          backgroundImage: `linear-gradient(rgba(232,184,75,1) 1px, transparent 1px), linear-gradient(90deg, rgba(232,184,75,1) 1px, transparent 1px)`,
-          backgroundSize: "60px 60px",
-        }}
-        aria-hidden="true"
-      />
+    <div className="relative min-h-screen w-full bg-gradient-to-br from-violet-50 via-indigo-50 to-sky-50 overflow-hidden">
+      {/* Background layers */}
+      <div aria-hidden="true" className="pointer-events-none fixed inset-0 overflow-hidden">
+        <div className="absolute inset-0 opacity-30 [background-image:radial-gradient(circle,rgba(99,102,241,0.08)_1px,transparent_1px)] [background-size:44px_44px]" />
+        <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[800px] h-[350px] rounded-full bg-gold/[0.15] blur-3xl" />
+        <div className="absolute bottom-0 left-1/4 w-[600px] h-[280px] rounded-full bg-teal/[0.12] blur-3xl" />
+        <div className="absolute top-1/3 right-0 w-[500px] h-[500px] rounded-full bg-violet/[0.10] blur-3xl" />
+      </div>
 
       {/* ── Nav ──────────────────────────────────────────────────────────── */}
-      <nav
-        className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-5 md:px-10 py-4 border-b border-gold/[0.08] backdrop-blur-md"
-        style={{ background: "rgba(13,13,31,0.85)" }}
-      >
+      <nav className="fixed top-0 left-0 right-0 z-50 flex items-center justify-between px-5 md:px-10 py-4 border-b border-slate-200 backdrop-blur-md bg-white/85">
         <Link href="/" className="flex items-center gap-2">
           <svg width="24" height="24" viewBox="0 0 48 48" fill="none">
             <path d="M24 2 L44 13 L44 35 L24 46 L4 35 L4 13 Z" stroke="#E8B84B" strokeWidth="1.5" fill="rgba(232,184,75,0.08)" />
             <circle cx="24" cy="24" r="5" fill="#E8B84B" />
           </svg>
-          <span className="font-display font-black text-white">
+          <span className="font-display font-black text-slate-800">
             Math<span className="text-gold">Quest</span>
           </span>
         </Link>
@@ -429,27 +421,23 @@ export default function TermsOfPlayPage() {
             <span className="text-gold/70 text-xs font-body uppercase tracking-widest">Legal · v1.0 · 2025</span>
           </div>
           <h1
-            className="font-display font-black text-white mb-4"
-            style={{ fontSize: "clamp(2rem, 6vw, 3.5rem)", letterSpacing: "-0.03em" }}
+            className="font-display font-black text-slate-800 mb-4 text-[clamp(2rem,6vw,3.5rem)] tracking-tight"
           >
             Terms of <span className="text-gold">Play</span>
           </h1>
-          <p className="text-white/40 font-body text-sm md:text-base max-w-lg mx-auto leading-relaxed">
+          <p className="text-slate-500 font-body text-sm md:text-base max-w-lg mx-auto leading-relaxed">
             The rules of the Number Wilds. Plain language up front, legal
             detail underneath. Click any section to expand it.
           </p>
         </div>
 
         {/* Core promise box */}
-        <div
-          className="rounded-xl border border-teal/20 p-5 md:p-6 mb-10"
-          style={{ background: "rgba(45,212,191,0.05)" }}
-        >
+        <div className="rounded-xl border border-teal/20 bg-teal/[0.06] p-5 md:p-6 mb-10">
           <div className="flex items-start gap-3">
             <span className="text-teal text-xl flex-shrink-0 mt-0.5">✦</span>
             <div>
-              <p className="text-white font-display font-bold text-base mb-2">The short version</p>
-              <p className="text-white/50 font-body text-sm leading-relaxed">
+              <p className="text-slate-800 font-display font-bold text-base mb-2">The short version</p>
+              <p className="text-slate-500 font-body text-sm leading-relaxed">
                 MathQuest is a parent-controlled math adventure game. Parents manage accounts and
                 approve all content. Children solve math to progress — there are no shortcuts.
                 No ads, no real-money purchases, no third-party data sharing, and children never
@@ -469,12 +457,12 @@ export default function TermsOfPlayPage() {
         {/* Additional sections (non-accordion) */}
         <div className="mt-6 space-y-3">
           {/* Changes to terms */}
-          <div className="rounded-xl border border-white/5 bg-white/[0.03] p-5 md:p-6">
+          <div className="rounded-xl border border-slate-200 bg-white/75 p-5 md:p-6 backdrop-blur-sm">
             <div className="flex items-start gap-4">
               <span className="font-display font-black text-sm text-violet flex-shrink-0 mt-0.5">11</span>
               <div>
-                <h3 className="font-display font-bold text-white text-base mb-2">Changes to These Terms</h3>
-                <p className="text-white/40 text-sm font-body leading-relaxed">
+                <h3 className="font-display font-bold text-slate-800 text-base mb-2">Changes to These Terms</h3>
+                <p className="text-slate-500 text-sm font-body leading-relaxed">
                   Wadana AI may update these Terms at any time. Material changes will be communicated
                   via email at least 14 days before taking effect. Continued use of MathQuest after
                   the effective date constitutes acceptance.
@@ -484,26 +472,26 @@ export default function TermsOfPlayPage() {
           </div>
 
           {/* Contact */}
-          <div className="rounded-xl border border-gold/15 p-5 md:p-6" style={{ background: "rgba(232,184,75,0.04)" }}>
+          <div className="rounded-xl border border-gold/20 bg-gold/[0.06] p-5 md:p-6">
             <div className="flex items-start gap-4">
               <span className="font-display font-black text-sm text-gold flex-shrink-0 mt-0.5">12</span>
               <div>
-                <h3 className="font-display font-bold text-white text-base mb-2">Contact</h3>
-                <p className="text-white/40 text-sm font-body leading-relaxed mb-3">
+                <h3 className="font-display font-bold text-slate-800 text-base mb-2">Contact</h3>
+                <p className="text-slate-500 text-sm font-body leading-relaxed mb-3">
                   Questions about these Terms? Reach us at:
                 </p>
                 <div className="flex flex-col gap-1.5">
                   <div className="flex items-center gap-2">
-                    <span className="text-gold/50 text-xs font-body uppercase tracking-wider w-16">Email</span>
-                    <span className="text-white/60 text-sm font-body">Hello@wadana.ai</span>
+                    <span className="text-gold/70 text-xs font-body uppercase tracking-wider w-16">Email</span>
+                    <span className="text-slate-600 text-sm font-body">Hello@wadana.ai</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-gold/50 text-xs font-body uppercase tracking-wider w-16">Product</span>
-                    <span className="text-white/60 text-sm font-body">MathQuest by Wadana AI</span>
+                    <span className="text-gold/70 text-xs font-body uppercase tracking-wider w-16">Product</span>
+                    <span className="text-slate-600 text-sm font-body">MathQuest by Wadana AI</span>
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-gold/50 text-xs font-body uppercase tracking-wider w-16">Effective</span>
-                    <span className="text-white/60 text-sm font-body">2025</span>
+                    <span className="text-gold/70 text-xs font-body uppercase tracking-wider w-16">Effective</span>
+                    <span className="text-slate-600 text-sm font-body">2025</span>
                   </div>
                 </div>
               </div>
@@ -513,7 +501,7 @@ export default function TermsOfPlayPage() {
 
         {/* Download CTA */}
         <div className="mt-10 text-center">
-          <p className="text-white/20 text-xs font-body mb-4 uppercase tracking-widest">
+          <p className="text-slate-400 text-xs font-body mb-4 uppercase tracking-widest">
             Want a copy for your records?
           </p>
           <a
@@ -531,11 +519,11 @@ export default function TermsOfPlayPage() {
         </div>
 
         {/* Footer line */}
-        <div className="mt-16 pt-8 border-t border-white/5 text-center">
-          <p className="text-white/15 text-xs font-body italic">
+        <div className="mt-16 pt-8 border-t border-slate-200 text-center">
+          <p className="text-slate-400 text-xs font-body italic">
             Math is the gate to power. These Terms are the rules of the game.
           </p>
-          <p className="text-white/10 text-xs font-body mt-2">
+          <p className="text-slate-300 text-xs font-body mt-2">
             MathQuest · Wadana AI · wadana.ai
           </p>
         </div>

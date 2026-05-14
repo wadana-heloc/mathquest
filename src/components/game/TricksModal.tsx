@@ -25,12 +25,12 @@ interface TrickView {
 // ─────────────────────────────────────────────────────────────
 
 const PALETTE = [
-  { color: 'text-yellow-300', bg: 'bg-yellow-950/50', border: 'border-yellow-500/30', badge: 'bg-yellow-500/20 text-yellow-200', dot: 'bg-yellow-400' },
-  { color: 'text-teal-300',   bg: 'bg-teal-950/50',   border: 'border-teal-500/30',   badge: 'bg-teal-500/20 text-teal-200',   dot: 'bg-teal-400'   },
-  { color: 'text-violet-300', bg: 'bg-violet-950/50', border: 'border-violet-500/30', badge: 'bg-violet-500/20 text-violet-200', dot: 'bg-violet-400' },
-  { color: 'text-orange-300', bg: 'bg-orange-950/50', border: 'border-orange-500/30', badge: 'bg-orange-500/20 text-orange-200', dot: 'bg-orange-400' },
-  { color: 'text-pink-300',   bg: 'bg-pink-950/50',   border: 'border-pink-500/30',   badge: 'bg-pink-500/20 text-pink-200',   dot: 'bg-pink-400'   },
-  { color: 'text-cyan-300',   bg: 'bg-cyan-950/50',   border: 'border-cyan-500/30',   badge: 'bg-cyan-500/20 text-cyan-200',   dot: 'bg-cyan-400'   },
+  { color: 'text-amber-700',  bg: 'bg-amber-50',   border: 'border-amber-200',  badge: 'bg-amber-100 text-amber-700',   dot: 'bg-amber-500'  },
+  { color: 'text-teal-700',   bg: 'bg-teal-50',    border: 'border-teal-200',   badge: 'bg-teal-100 text-teal-700',     dot: 'bg-teal-500'   },
+  { color: 'text-violet-700', bg: 'bg-violet-50',  border: 'border-violet-200', badge: 'bg-violet-100 text-violet-700', dot: 'bg-violet-500' },
+  { color: 'text-orange-700', bg: 'bg-orange-50',  border: 'border-orange-200', badge: 'bg-orange-100 text-orange-700', dot: 'bg-orange-500' },
+  { color: 'text-pink-700',   bg: 'bg-pink-50',    border: 'border-pink-200',   badge: 'bg-pink-100 text-pink-700',     dot: 'bg-pink-500'   },
+  { color: 'text-cyan-700',   bg: 'bg-cyan-50',    border: 'border-cyan-200',   badge: 'bg-cyan-100 text-cyan-700',     dot: 'bg-cyan-500'   },
 ]
 
 function catStyle(category: string) {
@@ -106,23 +106,20 @@ export function TricksModal({ onClose }: TricksModalProps) {
       `}</style>
 
       <div
-        className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md"
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
         onClick={e => { if (e.target === e.currentTarget) onClose() }}
       >
         <div
-          className="relative w-full max-w-2xl mx-4 max-h-[88vh] flex flex-col rounded-3xl border border-white/10 overflow-hidden shadow-2xl"
-          style={{
-            background: 'linear-gradient(155deg,#0f0b2a 0%,#18103a 50%,#0d1828 100%)',
-            animation: 'trickPop 0.25s ease forwards',
-          }}
+          className="relative w-full max-w-2xl mx-4 max-h-[88vh] flex flex-col rounded-3xl border border-violet-300 bg-white overflow-hidden"
+          style={{ animation: 'trickPop 0.25s ease forwards', boxShadow: '0 0 0 1px #c4b5fd33, 0 0 32px 6px #7c3aed40, 0 25px 50px -12px rgba(0,0,0,0.25)' }}
         >
           {/* ── Header ── */}
-          <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 flex-shrink-0">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-stone-100 flex-shrink-0">
             <div className="flex items-center gap-3">
               <span className="text-2xl">✨</span>
               <div>
-                <h2 className="text-white font-black text-lg tracking-tight leading-none">Math Tricks</h2>
-                <p className="text-white/35 text-[11px] font-bold mt-0.5">
+                <h2 className="text-stone-800 font-black text-lg tracking-tight leading-none">Math Tricks</h2>
+                <p className="text-stone-400 text-[11px] font-bold mt-0.5">
                   {loading
                     ? 'Loading…'
                     : unlockedCount === 0
@@ -134,7 +131,7 @@ export function TricksModal({ onClose }: TricksModalProps) {
             <button
               type="button"
               onClick={onClose}
-              className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 border border-white/15 text-white/50 hover:text-white flex items-center justify-center text-sm font-black transition-all duration-150 active:scale-90"
+              className="w-8 h-8 rounded-full bg-stone-100 hover:bg-stone-200 border border-stone-200 text-stone-400 hover:text-stone-700 flex items-center justify-center text-sm font-black transition-all duration-150 active:scale-90"
               aria-label="Close tricks"
             >✕</button>
           </div>
@@ -143,10 +140,10 @@ export function TricksModal({ onClose }: TricksModalProps) {
           {loading && (
             <div className="flex flex-col items-center justify-center flex-1 gap-3">
               <div
-                className="w-8 h-8 rounded-full border-2 border-white/20 border-t-yellow-400"
+                className="w-8 h-8 rounded-full border-2 border-stone-200 border-t-amber-500"
                 style={{ animation: 'trickSpin 0.8s linear infinite' }}
               />
-              <p className="text-white/30 text-xs font-bold">Fetching tricks…</p>
+              <p className="text-stone-400 text-xs font-bold">Fetching tricks…</p>
             </div>
           )}
 
@@ -154,13 +151,13 @@ export function TricksModal({ onClose }: TricksModalProps) {
           {!loading && unlockedCount === 0 && (
             <div className="flex flex-col items-center justify-center flex-1 px-8 py-12 text-center">
               <div className="text-6xl mb-5" style={{ animation: 'trickFloat 3s ease-in-out infinite' }}>🔮</div>
-              <h3 className="text-white font-black text-2xl mb-2">No Tricks Yet!</h3>
-              <p className="text-white/50 text-sm max-w-xs leading-relaxed mb-1">
+              <h3 className="text-stone-800 font-black text-2xl mb-2">No Tricks Yet!</h3>
+              <p className="text-stone-500 text-sm max-w-xs leading-relaxed mb-1">
                 Solve obstacles and boss battles to unlock powerful math tricks.
               </p>
-              <p className="text-yellow-400 font-black text-sm mt-1">Go play and discover tricks →</p>
+              <p className="text-amber-500 font-black text-sm mt-1">Go play and discover tricks →</p>
               {tricks.length > 0 && (
-                <p className="text-white/20 text-xs mt-6 font-bold">{tricks.length} tricks to find</p>
+                <p className="text-stone-300 text-xs mt-6 font-bold">{tricks.length} tricks to find</p>
               )}
             </div>
           )}
@@ -169,7 +166,7 @@ export function TricksModal({ onClose }: TricksModalProps) {
           {!loading && unlockedCount > 0 && (
             <>
               {/* Category tabs */}
-              <div className="flex gap-2 px-5 py-3 border-b border-white/10 overflow-x-auto flex-shrink-0" style={{ scrollbarWidth: 'none' }}>
+              <div className="flex gap-2 px-5 py-3 border-b border-stone-100 overflow-x-auto flex-shrink-0" style={{ scrollbarWidth: 'none' }}>
                 {categories.map(cat => {
                   const isActive = tab === cat
                   const count    = cat === 'All'
@@ -182,12 +179,12 @@ export function TricksModal({ onClose }: TricksModalProps) {
                       onClick={() => setTab(cat)}
                       className={`flex-shrink-0 flex items-center gap-1.5 px-3.5 py-1.5 rounded-full text-xs font-black capitalize transition-all duration-150 ${
                         isActive
-                          ? 'bg-yellow-400 text-[#1A1A2E]'
-                          : 'bg-white/8 text-white/50 hover:bg-white/15 hover:text-white border border-white/10'
+                          ? 'bg-amber-400 text-stone-800'
+                          : 'bg-stone-100 text-stone-500 hover:bg-stone-200 hover:text-stone-700 border border-stone-200'
                       }`}
                     >
                       {cat}
-                      <span className={`rounded-full w-4 h-4 flex items-center justify-center text-[9px] font-black ${isActive ? 'bg-black/20 text-[#1A1A2E]' : 'bg-white/10 text-white/40'}`}>
+                      <span className={`rounded-full w-4 h-4 flex items-center justify-center text-[9px] font-black ${isActive ? 'bg-stone-800/20 text-stone-800' : 'bg-stone-200 text-stone-400'}`}>
                         {count}
                       </span>
                     </button>
@@ -198,7 +195,7 @@ export function TricksModal({ onClose }: TricksModalProps) {
               {/* Grid */}
               <div
                 className="overflow-y-auto flex-1 p-4 grid grid-cols-2 gap-3"
-                style={{ scrollbarWidth: 'thin', scrollbarColor: '#E8B84B33 transparent' }}
+                style={{ scrollbarWidth: 'thin', scrollbarColor: '#d6d3d1 transparent' }}
               >
                 {visible.map((trick, i) => {
                   const s = catStyle(trick.category)
@@ -207,29 +204,29 @@ export function TricksModal({ onClose }: TricksModalProps) {
                       key={trick.id}
                       className={`relative rounded-2xl border p-4 transition-all duration-200 ${
                         trick.unlocked
-                          ? `${s.bg} ${s.border} hover:brightness-110`
-                          : 'bg-white/3 border-white/8 opacity-40 grayscale'
+                          ? `${s.bg} ${s.border} hover:brightness-95`
+                          : 'bg-stone-50 border-stone-100 opacity-40 grayscale'
                       }`}
                       style={{ animation: `trickFadeUp 0.3s ease ${i * 0.04}s both` }}
                     >
                       {/* ID badge + lock */}
                       <div className="flex items-center justify-between mb-2">
-                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${trick.unlocked ? s.badge : 'bg-white/10 text-white/20'}`}>
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${trick.unlocked ? s.badge : 'bg-stone-200 text-stone-300'}`}>
                           {trick.id}
                         </span>
                         {trick.unlocked
                           ? <div className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
-                          : <span className="text-[11px] text-white/20">🔒</span>}
+                          : <span className="text-[11px] text-stone-300">🔒</span>}
                       </div>
 
                       {/* Name */}
-                      <h4 className={`font-black text-sm leading-tight mb-2 ${trick.unlocked ? s.color : 'text-white/20'}`}>
+                      <h4 className={`font-black text-sm leading-tight mb-2 ${trick.unlocked ? s.color : 'text-stone-300'}`}>
                         {trick.name}
                       </h4>
 
                       {/* Description — only when unlocked */}
                       {trick.unlocked && (
-                        <p className="text-white/60 text-[11px] leading-relaxed">
+                        <p className="text-stone-600 text-[11px] leading-relaxed">
                           {trick.description}
                         </p>
                       )}
@@ -237,13 +234,13 @@ export function TricksModal({ onClose }: TricksModalProps) {
                       {/* Footer: category + unlock time */}
                       <div className="mt-3 flex items-center justify-between gap-1">
                         <div className="flex items-center gap-1 min-w-0">
-                          <div className={`w-1 h-1 rounded-full flex-shrink-0 ${trick.unlocked ? s.dot : 'bg-white/10'}`} />
-                          <span className={`text-[10px] font-bold capitalize truncate ${trick.unlocked ? 'text-white/30' : 'text-white/15'}`}>
+                          <div className={`w-1 h-1 rounded-full flex-shrink-0 ${trick.unlocked ? s.dot : 'bg-stone-300'}`} />
+                          <span className={`text-[10px] font-bold capitalize truncate ${trick.unlocked ? 'text-stone-400' : 'text-stone-300'}`}>
                             {trick.category}
                           </span>
                         </div>
                         {trick.unlocked && trick.unlocked_at && (
-                          <span className="text-[9px] text-white/25 font-bold flex-shrink-0">
+                          <span className="text-[9px] text-stone-400 font-bold flex-shrink-0">
                             {timeAgo(trick.unlocked_at)}
                           </span>
                         )}

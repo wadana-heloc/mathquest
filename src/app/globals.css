@@ -283,3 +283,113 @@
   background-size: 700px 100%;
   animation: skeleton-shimmer 1.8s ease-in-out infinite;
 }
+
+/* ── Zone 4 Coming Soon ────────────────────────────────────────────────────── */
+@keyframes floatUp {
+  0%   { opacity: 0;   transform: translateY(0) scale(0.8); }
+  20%  { opacity: 0.7; }
+  80%  { opacity: 0.4; }
+  100% { opacity: 0;   transform: translateY(-100vh) scale(1.2); }
+}
+
+@keyframes breathe {
+  0%, 100% { transform: scale(1);    opacity: 1;   }
+  50%       { transform: scale(1.15); opacity: 0.7; }
+}
+
+.zone4-gradient-text {
+  background: linear-gradient(90deg, #a78bfa, #f0abfc, #a78bfa);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.zone4-glow {
+  width: 600px;
+  height: 600px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(139, 92, 246, 0.15) 0%, transparent 70%);
+  animation: breathe 3s ease-in-out infinite;
+}
+
+.zone4-content {
+  opacity: 0;
+  transform: translateY(40px);
+  transition: opacity 0.7s ease, transform 0.7s ease;
+}
+.zone4-content.zone4-revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.zone4-teaser-box {
+  background: rgba(46, 16, 101, 0.3);
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.zone4-notify-btn {
+  background: linear-gradient(90deg, #7c3aed, #c026d3);
+  box-shadow: 0 0 40px rgba(124, 58, 237, 0.35);
+  color: white;
+}
+.zone4-notify-btn:hover {
+  background: linear-gradient(90deg, #6d28d9, #a21caf);
+}
+.zone4-notify-done {
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.5);
+  cursor: default;
+}
+
+.zone4-secondary-btn {
+  background: rgba(255, 255, 255, 0.07);
+}
+.zone4-secondary-btn:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+/* Particle float animation */
+.zone4-particle {
+  position: absolute;
+  bottom: -2rem;
+  opacity: 0;
+  animation: floatUp 2.5s 0s ease-in infinite;
+}
+
+/* Per-particle left positions (18 slots) */
+.zone4-p-0  { left: 5%;    } .zone4-p-1  { left: 10.5%; }
+.zone4-p-2  { left: 16%;   } .zone4-p-3  { left: 21.5%; }
+.zone4-p-4  { left: 27%;   } .zone4-p-5  { left: 32.5%; }
+.zone4-p-6  { left: 38%;   } .zone4-p-7  { left: 43.5%; }
+.zone4-p-8  { left: 49%;   } .zone4-p-9  { left: 54.5%; }
+.zone4-p-10 { left: 60%;   } .zone4-p-11 { left: 65.5%; }
+.zone4-p-12 { left: 71%;   } .zone4-p-13 { left: 76.5%; }
+.zone4-p-14 { left: 82%;   } .zone4-p-15 { left: 87.5%; }
+.zone4-p-16 { left: 93%;   } .zone4-p-17 { left: 6.5%;  }
+
+.zone4-float-delay-0 { animation-delay: 0s; }
+.zone4-float-delay-1 { animation-delay: 0.37s; }
+.zone4-float-delay-2 { animation-delay: 0.74s; }
+.zone4-float-delay-3 { animation-delay: 1.11s; }
+.zone4-float-delay-4 { animation-delay: 1.48s; }
+.zone4-float-delay-5 { animation-delay: 1.85s; }
+
+.zone4-float-dur-0 { animation-duration: 2.5s; }
+.zone4-float-dur-1 { animation-duration: 2.73s; }
+.zone4-float-dur-2 { animation-duration: 2.96s; }
+.zone4-float-dur-3 { animation-duration: 3.19s; }
+.zone4-float-dur-4 { animation-duration: 3.42s; }
+.zone4-float-dur-5 { animation-duration: 3.65s; }
+
+/* Emoji bounce delays */
+.zone4-bounce-0 { animation: bounce 1s 0s   infinite; }
+.zone4-bounce-1 { animation: bounce 1s 0.15s infinite; }
+.zone4-bounce-2 { animation: bounce 1s 0.3s  infinite; }
+
+/* Teaser bar pulse delays */
+.zone4-bar-0 { width: 2rem;    animation: pulse 1.5s 0s   ease-in-out infinite; }
+.zone4-bar-1 { width: 2rem;    animation: pulse 1.5s 0.2s ease-in-out infinite; }
+.zone4-bar-2 { width: 2rem;    animation: pulse 1.5s 0.4s ease-in-out infinite; }
+.zone4-bar-3 { width: 0.5rem;  animation: pulse 1.5s 0.6s ease-in-out infinite; }
+.zone4-bar-4 { width: 0.5rem;  animation: pulse 1.5s 0.8s ease-in-out infinite; }
